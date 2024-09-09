@@ -9,6 +9,6 @@ from importlib.metadata import version
 __all__ = ("__version__",)
 __version__ = version(__name__)
 
-from cross_section import Cross_section
-from models import Transmission_model
+from cross_section import CrossSection
+from models import TransmissionModel
 import utils

@@ -55,6 +55,7 @@ def grab_from_endf(isotope: str, evaluated_data_dir: str = "evaluated_data") -> 
     xs = pd.read_csv(file_path, comment="#", delim_whitespace=True, header=None, names=["E", "xs"], usecols=[0, 1], index_col=0)
     xs = xs[~xs.index.duplicated()]
     xs["xs"] *= 0.001  # Convert to barns
+    xs.index *= 1e6  # Convert to eV
     return xs["xs"].rename(isotope)
 
 
@@ -111,17 +112,21 @@ class CrossSection:
         table["total"] = (table * self.weights).sum(axis=1)
         self.table = table
 
-    def __call__(self, energies: np.ndarray) -> np.ndarray:
+    def __call__(self, energies: np.ndarray,weights: np.ndarray=np.array([])) -> np.ndarray:
         """
         Calculate the weighted cross-section for given energies.
         
         Parameters:
         energies (np.ndarray): Array of energy values.
+        weights (np.ndarray) (optional): Array of new weights
         
         Returns:
         np.ndarray: Array of weighted cross-section values.
         """
-        return (np.array([ufunc(energies) for ufunc in self.ufuncs]).T * self.weights).sum(axis=1)
+        if len(weights):
+            return (np.array([ufunc(energies) for ufunc in self.ufuncs]).T * weights).sum(axis=1)
+        else:
+            return (np.array([ufunc(energies) for ufunc in self.ufuncs]).T * self.weights).sum(axis=1)
 
     def plot(self, **kwargs):
         """
