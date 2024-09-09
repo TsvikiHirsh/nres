@@ -1,19 +1,67 @@
-import pandas
 import lmfit
+import numpy as np
 
-class Transmission_model:
+class TransmissionModel(lmfit.Model):
+    def __init__(self, cross_section, vary_weights=False, vary_background=False, **kwargs):
+        """
+        Initialize the TransmissionModel, a subclass of lmfit.Model.
 
-    def __init__(self,isotopes,
-                      thickness=1,
-                      n=1,
-                      norm=1,
-                      bg0=0.1,
-                      bg1=0,
-                      bg2=0,
-                      vary_weights=False):
+        Parameters:
+        - cross_section: callable
+            A function that takes energy (E) as input and returns the cross section.
+        - vary_weights: bool, optional (default=False)
+            If True, allows the isotope weights to vary during fitting.
+        - vary_background: bool, optional (default=False)
+            If True, allows the background parameters (b0, b1, b2) to vary during fitting.
+        - kwargs: dict
+            Additional keyword arguments for background parameters, such as `b0`, `b1`, and `b2`.
+        """
+        super().__init__(self.transmission, **kwargs)
+        self.cross_section = cross_section
         
-        self.isotopes = isotopes
+        self.params = self.make_params()
+        for isotope in self.cross_section.isotopes:
+            self.params.add(isotope.replace("-", ""),
+                            value=self.cross_section.isotopes[isotope],
+                            min=0,
+                            max=1,
+                            vary=vary_weights)
 
-    def model(x):
-        xs = sum([weight*cross_section for weight,isotope]
-        trans = exp(-self.params["n"]*self.params["thickness"])
+        # Initialize background parameters with provided values or defaults
+        bg_args = {"b0": kwargs.get("b0", 1e-5), "b1": kwargs.get("b1", 1e-5), "b2": kwargs.get("b2", 1e-5)}
+        for b in bg_args:
+            self.params.add(b, value=bg_args[b], vary=vary_background)
+
+        # set the n parameter as fixed
+        self.params.add("n", value=0.01, vary=False)
+
+    def transmission(self, E, thickness=1, n=0.01, norm=1., b0=0., b1=0., b2=0.):
+        """
+        Transmission function model with background components.
+
+        Parameters:
+        - E: array-like
+            The energy values at which to calculate the transmission.
+        - thickness: float, optional (default=1)
+            The thickness of the material.
+        - n: float, optional (default=0.01)
+            The number density of the material. units [atoms/barn-cm]
+        - norm: float, optional (default=1.)
+            Normalization factor for the transmission.
+        - b0: float, optional (default=0.)
+            Background parameter (constant term).
+        - b1: float, optional (default=0.)
+            Background parameter (linear term).
+        - b2: float, optional (default=0.)
+            Background parameter (quadratic term).
+
+        Returns:
+        - T: array-like
+            The calculated transmission values.
+        """
+        # Background polynomial
+        bg = b0 + b1 * np.sqrt(E) + b2 * np.sqrt(E)
+        
+        # Transmission function
+        T = norm * np.exp(-self.cross_section(E) * thickness * n) * (1 - bg) + bg
+        return T
