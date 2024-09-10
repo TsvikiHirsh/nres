@@ -1,6 +1,35 @@
 import lmfit
 import numpy as np
 
+
+
+class TransmissionModelResult(lmfit.model.ModelResult):
+    def __init__(self, model, params, **kwargs):
+        """
+        Custom result class for TransmissionModel.
+        """
+        super().__init__(model, params, **kwargs)
+
+    def plot(self, **kwargs):
+        """
+        Custom plot method that includes a legend with isotopes.
+        
+        Parameters:
+        - kwargs: keyword arguments for the plot function.
+        
+        Returns:
+        - matplotlib figure and axis.
+        """
+        fig, ax = plt.subplots()
+        # Plot the data and the best-fit model
+        self.plot_fit(ax=ax, **kwargs)
+        
+        # Create custom legend based on isotopes
+        legend_text = "Isotopes: "
+        ax.legend([legend_text], loc='best')
+
+        return fig, ax
+
 class TransmissionModel(lmfit.Model):
     def __init__(self, cross_section, vary_weights=False, vary_background=False, **kwargs):
         """
@@ -65,3 +94,25 @@ class TransmissionModel(lmfit.Model):
         # Transmission function
         T = norm * np.exp(-self.cross_section(E) * thickness * n) * (1 - bg) + bg
         return T
+
+    # def fit(self, data, params=None, **kwargs):
+    #     """
+    #     Fit the model to the data.
+
+    #     Parameters:
+    #     - data: array-like
+    #         The data to fit the model to.
+    #     - params: Parameters object, optional
+    #         The initial parameter values for the fit.
+    #     - kwargs: dict
+    #         Additional keyword arguments passed to the lmfit.Model.fit method.
+
+    #     Returns:
+    #     - TransmissionModelResult
+    #         The result of the fit.
+    #     """
+    #     # Perform the fit using the parent class's fit method
+    #     fit_result = super().fit(data, params=params or self.params, **kwargs)
+    #     return TransmissionModelResult(fit_result, params or self.params)
+    
+
