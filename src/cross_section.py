@@ -81,7 +81,7 @@ class CrossSection:
         vary_weights (bool): Whether to allow varying weights in calculations (default: False).
         """
         self.isotopes = isotopes
-        self.weights = np.array(list(self.isotopes.values()))
+        self.weights = np.array(list(self.isotopes.values()),float)
         self.weights /= self.weights.sum()  # Normalize weights to 1
         self.name = name
         self.ufuncs = []
