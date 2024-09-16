@@ -2,126 +2,215 @@ import os
 import requests
 import pandas as pd
 import numpy as np
+from response import Response
+import utils
+from scipy.signal import convolve
+from tqdm import tqdm
+import site
 from scipy.interpolate import UnivariateSpline
-
-
-def format_isotope_name(isotope: str) -> str:
-    """
-    Format the isotope name to match the GitHub repository format.
-    
-    Parameters:
-    isotope (str): The isotope name in formats like 'Al-27' or 'Al27'.
-    
-    Returns:
-    str: Formatted isotope name, e.g., 'Al027'.
-    """
-    isotope = isotope.replace('-', '').replace(' ', '')
-    element = ''.join([char for char in isotope if not char.isdigit()])
-    atomic_number = ''.join([char for char in isotope if char.isdigit()])
-    return f"{element}{atomic_number.zfill(3)}"
-
-
-def grab_from_endf(isotope: str, evaluated_data_dir: str = "evaluated_data") -> pd.Series:
-    """
-    Download and save the cross-section data for the specified isotope if it doesn't exist locally.
-    
-    Parameters:
-    isotope (str): The name of the isotope, e.g., 'Al-27'.
-    evaluated_data_dir (str): Directory to save the downloaded data.
-    
-    Returns:
-    pd.Series: The cross-section data with energy as the index and cross-section as the values.
-    """
-    formatted_isotope = format_isotope_name(isotope)
-    url = (
-        f"https://raw.githubusercontent.com/pedrojrv/ML_Nuclear_Data/master/"
-        f"Evaluated_Data/neutrons/{formatted_isotope}/endfb8.0/tables/xs/"
-        f"n-{formatted_isotope}-MT001.endfb8.0"
-    )
-    file_path = os.path.join(evaluated_data_dir, f"{formatted_isotope}.endf")
-
-    # Download and save the file if it doesn't exist locally
-    if not os.path.exists(file_path):
-        print(f"Downloading data for {isotope}...")
-        response = requests.get(url)
-        response.raise_for_status()  # Ensure the request was successful
-
-        os.makedirs(evaluated_data_dir, exist_ok=True)
-        with open(file_path, 'wb') as file:
-            file.write(response.content)
-        print(f"Data saved to {file_path}")
-
-    # Read and process the cross-section data
-    xs = pd.read_csv(file_path, comment="#", delim_whitespace=True, header=None, names=["E", "xs"], usecols=[0, 1], index_col=0)
-    xs = xs[~xs.index.duplicated()]
-    xs["xs"] *= 0.001  # Convert to barns
-    xs.index *= 1e6  # Convert to eV
-    return xs["xs"].rename(isotope)
+from scipy.integrate import quad
+import warnings
 
 
 class CrossSection:
     """
     Class representing a combination of cross-sections for different isotopes.
 
+    This class loads isotope cross-section data, performs interpolation, rebinning, and
+    allows calculation of total cross-section based on weighted sums. Cross-section data 
+    is either loaded from local files or downloaded from a remote GitHub repository.
+
     Attributes:
-    isotopes (dict): A dictionary with isotope names as keys and their respective weights as values.
-    name (str): The name of the combined cross-section.
-    weights (np.ndarray): Normalized weights for the isotopes.
-    table (pd.DataFrame): Interpolated cross-section data for all isotopes and their weighted sum.
-    ufuncs (list): List of interpolation functions for each isotope.
+    ----------
+    isotopes : dict
+        A dictionary with isotope names or `CrossSection` objects as keys and their respective weights as values.
+    name : str
+        The name of the combined cross-section.
+    weights : np.ndarray
+        Normalized weights for the isotopes.
+    table : pd.DataFrame
+        Interpolated cross-section data for all isotopes and their weighted sum.
+    ufuncs : list
+        List of interpolation functions for each isotope.
+    L : float
+        Flight path length [m].
+    tstep : float
+        Time step for the simulation.
+    tbins : int
+        Number of time bins.
+    first_tbin : int
+        The index of the first time bin.
     """
 
-    def __init__(self, isotopes: dict = {}, name: str = "", vary_weights: bool = False):
+    def __init__(self, isotopes: dict = {}, 
+                 name: str = "", 
+                 L: float = 10.59,
+                 tstep: float = 1.65255e-9,
+                 tbins: int = 640,
+                 first_tbin: int = 0):
         """
-        Initialize the CrossSection class.
+        Initialize the CrossSection class with isotopes, weights, and other parameters.
 
         Parameters:
-        isotopes (dict): A dictionary with isotope names or CrossSection objects as keys and their respective weights as values.
-        name (str): The name of the combined cross-section.
-        vary_weights (bool): Whether to allow varying weights in calculations (default: False).
+        ----------
+        isotopes : dict
+            Dictionary with isotope names or `CrossSection` objects as keys and their respective weights as values.
+        name : str
+            Name of the combined cross-section.
+        L : float
+            Flight path length [m].
+        tstep : float
+            Time step for the simulation.
+        tbins : int
+            Number of time bins.
+        first_tbin : int
+            The index of the first time bin.
         """
         self.isotopes = isotopes
-        self.weights = np.array(list(self.isotopes.values()),float)
-        self.weights /= self.weights.sum()  # Normalize weights to 1
+        self.weights = np.array(list(self.isotopes.values()), float)
+        self.weights /= self.weights.sum()  # Normalize weights
+        self.L = L
         self.name = name
         self.ufuncs = []
 
-        # Populate the cross-section data
+        # Define the filename and location in site-packages
+        self.file_name = 'xsdata.npy'
+        self.package_dir = os.path.join(site.getsitepackages()[0], 'cross_section_data')
+        self.file_path = os.path.join(self.package_dir, self.file_name)
+
+        self.__xsdata__ = None
+        self._load_xsdata()
+
+        self.first_tbin = first_tbin
+        self.tstep = tstep
+        self.tbins = tbins
+
+        # Populate cross-section data for isotopes
+        self._populate_isotope_data()
+
+    def _download_xsdata(self):
+        """Download the xsdata.npy file from GitHub and save it to the package directory."""
+        url = 'https://github.com/lanl/trinidi-data/blob/main/xsdata.npy?raw=true'
+
+        # Create the folder if it doesn't exist
+        if not os.path.exists(self.package_dir):
+            os.makedirs(self.package_dir)
+
+        # Download with progress bar
+        response = requests.get(url, stream=True)
+        if response.status_code == 200:
+            total_size = int(response.headers.get('content-length', 0))
+            with open(self.file_path, 'wb') as f, tqdm(
+                desc=f"Downloading {self.file_path}",
+                total=total_size,
+                unit='B',
+                unit_scale=True,
+                unit_divisor=1024,
+                ncols=80
+            ) as bar:
+                for data in response.iter_content(chunk_size=1024):
+                    f.write(data)
+                    bar.update(len(data))
+            print(f"File downloaded and saved to {self.file_path}")
+        else:
+            raise Exception(f"Failed to download the file. Status code: {response.status_code}")
+
+    def _load_xsdata(self):
+        """Load the xsdata.npy file into the object."""
+        if self.__xsdata__ is None:
+            if not os.path.exists(self.file_path):
+                print(f"File not found at {self.file_path}, downloading...")
+                self._download_xsdata()
+
+            xsdata = np.load(self.file_path, allow_pickle=True)[()]
+            self.__xsdata__ = {
+                isotope: pd.Series(xsdata["cross_sections"][i], index=xsdata["energies"][i])
+                for i, isotope in enumerate(xsdata["isotopes"])
+            }
+
+    def _populate_isotope_data(self):
+        """Populate cross-section data for the isotopes and compute weighted total."""
         xs = {}
-        for isotope in self.isotopes:
+        updated_isotopes = {}
+        
+        for isotope, weight in self.isotopes.items():
             if isinstance(isotope, str):
-                xs[isotope] = grab_from_endf(isotope)
+                xs[isotope] = self.get_xs(isotope)
+                updated_isotopes[isotope] = weight
             elif isinstance(isotope, CrossSection):
                 xs[isotope.name] = isotope.table["total"].rename(isotope.name)
-                isotope = isotope.name
-
-            self.ufuncs.append(UnivariateSpline(xs[isotope].index.values, xs[isotope].values, k=1, s=0))
-
-        # Update isotope names
-        updated_isotopes = {}
-        for isotope in self.isotopes:
-            if isinstance(isotope, str):
-                updated_isotopes[isotope] = self.isotopes[isotope]
-            elif isinstance(isotope, CrossSection):
-                updated_isotopes[isotope.name] = self.isotopes[isotope]
-
+                updated_isotopes[isotope.name] = weight
+        
         self.isotopes = updated_isotopes
-
-        # Create an interpolated table with the weighted sum of cross-sections
-        table = pd.DataFrame(xs).interpolate()
+        table = pd.DataFrame(xs)
         table["total"] = (table * self.weights).sum(axis=1)
         self.table = table
 
-    def __call__(self, energies: np.ndarray,weights: np.ndarray=np.array([])) -> np.ndarray:
+    def get_xs(self, isotope: str = "C-12") -> pd.Series:
         """
-        Calculate the weighted cross-section for given energies.
-        
+        Retrieve and interpolate the cross-section data for a given isotope.
+
         Parameters:
-        energies (np.ndarray): Array of energy values.
-        weights (np.ndarray) (optional): Array of new weights
-        
+        ----------
+        isotope : str
+            The isotope for which to retrieve the cross-section.
+
         Returns:
-        np.ndarray: Array of weighted cross-section values.
+        -------
+        pd.Series
+            Interpolated cross-section values for the isotope.
+        """
+        warnings.filterwarnings("ignore")
+
+        # Get the cross-section data and create a linear interpolation function
+        xs = self.__xsdata__[isotope]
+        ufunc = UnivariateSpline(xs.index.values, xs.values, k=1, s=0)
+
+        integral = {}
+        grid = np.arange(self.first_tbin, self.tbins + 1, 1)
+        for i, g in enumerate(grid[:-1]):
+            emin = utils.time2energy(grid[i + 1] * self.tstep, self.L)
+            emax = utils.time2energy(grid[i] * self.tstep, self.L)
+            if emin > 0 and emax > 0:
+                result = quad(ufunc, emin, emax)[0] / (emax - emin)
+                integral[g] = result if result >= 0 else 0.
+            else:
+                integral[g] = 0
+        integral = pd.Series(integral, name=isotope).reset_index()
+        integral["energy"] = utils.time2energy(grid[:-1] * self.tstep, self.L)
+
+        return integral.set_index("energy")[isotope]
+
+    def set_response(self, kind="gauss_norm", **kwargs):
+        """
+        Set the response function for the cross-section and apply it to the total cross-section.
+
+        Parameters:
+        ----------
+        kind : str
+            Type of response function to use.
+        kwargs : dict
+            Additional parameters for the response function.
+        """
+        self.response = Response(kind=kind, L=self.L)
+        tof = utils.energy2time(self.table.index.values, self.L)
+        self.table["response_total"] = convolve(self.table["total"], self.response(tof, **kwargs), "same")
+
+    def __call__(self, energies: np.ndarray, weights: np.ndarray = np.array([])) -> np.ndarray:
+        """
+        Calculate the weighted cross-section for a given set of energies.
+
+        Parameters:
+        ----------
+        energies : np.ndarray
+            Array of energy values.
+        weights : np.ndarray, optional
+            Optional array of new weights.
+
+        Returns:
+        -------
+        np.ndarray
+            Array of weighted cross-section values.
         """
         if len(weights):
             return (np.array([ufunc(energies) for ufunc in self.ufuncs]).T * weights).sum(axis=1)
@@ -129,10 +218,6 @@ class CrossSection:
             return (np.array([ufunc(energies) for ufunc in self.ufuncs]).T * self.weights).sum(axis=1)
 
     def plot(self, **kwargs):
-        """
-        Plot the cross-section data.
-        
-        Parameters:
-        kwargs: Additional arguments to pass to the plotting function.
-        """
+        """Plot the cross-section data with optional plotting parameters."""
         self.table.mul(np.r_[self.weights, 1], axis=1).plot(**kwargs)
+
