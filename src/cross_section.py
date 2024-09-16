@@ -47,7 +47,7 @@ class CrossSection:
                  L: float = 10.59,
                  tstep: float = 1.65255e-9,
                  tbins: int = 640,
-                 first_tbin: int = 0):
+                 first_tbin: int = 1):
         """
         Initialize the CrossSection class with isotopes, weights, and other parameters.
 
@@ -140,10 +140,13 @@ class CrossSection:
             elif isinstance(isotope, CrossSection):
                 xs[isotope.name] = isotope.table["total"].rename(isotope.name)
                 updated_isotopes[isotope.name] = weight
+                isotope = isotope.name
         
         self.isotopes = updated_isotopes
         table = pd.DataFrame(xs)
         table["total"] = (table * self.weights).sum(axis=1)
+        table["tof"] = self.tgrid
+        table["energy"] = self.egrid
         self.table = table
 
     def get_xs(self, isotope: str = "C-12") -> pd.Series:
@@ -167,7 +170,7 @@ class CrossSection:
         ufunc = UnivariateSpline(xs.index.values, xs.values, k=1, s=0)
 
         integral = {}
-        grid = np.arange(self.first_tbin, self.tbins + 1, 1)
+        grid = np.arange(self.first_tbin, self.tbins + 1 + self.first_tbin, 1)
         for i, g in enumerate(grid[:-1]):
             emin = utils.time2energy(grid[i + 1] * self.tstep, self.L)
             emax = utils.time2energy(grid[i] * self.tstep, self.L)
@@ -176,10 +179,11 @@ class CrossSection:
                 integral[g] = result if result >= 0 else 0.
             else:
                 integral[g] = 0
-        integral = pd.Series(integral, name=isotope).reset_index()
-        integral["energy"] = utils.time2energy(grid[:-1] * self.tstep, self.L)
+        integral = pd.Series(integral, name=isotope)
+        self.tgrid = grid[:-1]
+        self.egrid = utils.time2energy(self.tgrid*self.tstep, self.L)
 
-        return integral.set_index("energy")[isotope]
+        return integral
 
     def set_response(self, kind="gauss_norm", **kwargs):
         """
@@ -192,18 +196,16 @@ class CrossSection:
         kwargs : dict
             Additional parameters for the response function.
         """
-        self.response = Response(kind=kind, L=self.L)
+        self.response = Response(kind=kind, L=self.L,tbin=self.tstep,nbins=self.nbins)
         tof = utils.energy2time(self.table.index.values, self.L)
         self.table["response_total"] = convolve(self.table["total"], self.response(tof, **kwargs), "same")
 
-    def __call__(self, energies: np.ndarray, weights: np.ndarray = np.array([])) -> np.ndarray:
+    def __call__(self, weights = None):
         """
         Calculate the weighted cross-section for a given set of energies.
 
         Parameters:
         ----------
-        energies : np.ndarray
-            Array of energy values.
         weights : np.ndarray, optional
             Optional array of new weights.
 
@@ -212,12 +214,13 @@ class CrossSection:
         np.ndarray
             Array of weighted cross-section values.
         """
-        if len(weights):
-            return (np.array([ufunc(energies) for ufunc in self.ufuncs]).T * weights).sum(axis=1)
+        if weights==None or weights==[]:
+            return self.table["total"]
         else:
-            return (np.array([ufunc(energies) for ufunc in self.ufuncs]).T * self.weights).sum(axis=1)
+            return self.table.drop(["total","tof","energy"],axis=1).mul(weights, axis=1).sum(axis=1)
 
-    def plot(self, **kwargs):
+    def plot(self, x="energy",**kwargs):
         """Plot the cross-section data with optional plotting parameters."""
-        self.table.mul(np.r_[self.weights, 1], axis=1).plot(**kwargs)
+        drop = "tof" if x=="energy" else "energy"
+        self.table.set_index(x).drop(drop,axis=1).mul(np.r_[self.weights, 1], axis=1).plot(**kwargs)
 
