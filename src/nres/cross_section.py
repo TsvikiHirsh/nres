@@ -2,8 +2,8 @@ import os
 import requests
 import pandas as pd
 import numpy as np
-from response import Response
-import utils
+from nres.response import Response
+import nres.utils as utils
 from scipy.signal import convolve
 from tqdm import tqdm
 import site
@@ -45,7 +45,7 @@ class CrossSection:
     def __init__(self, isotopes: dict = {}, 
                  name: str = "", 
                  L: float = 10.59,
-                 tstep: float = 1.65255e-9,
+                 tstep: float = 1.56255e-9,
                  tbins: int = 640,
                  first_tbin: int = 1):
         """
@@ -87,6 +87,7 @@ class CrossSection:
 
         # Populate cross-section data for isotopes
         self._populate_isotope_data()
+        self.set_energy_range()
 
     def _download_xsdata(self):
         """Download the xsdata.npy file from GitHub and save it to the package directory."""
@@ -184,6 +185,13 @@ class CrossSection:
         self.egrid = utils.time2energy(self.tgrid*self.tstep, self.L)
 
         return integral
+    
+    def set_energy_range(self,emin=0.5e6,emax=2.0e7):
+        self.total = self.table.query(f"{emin}<=energy<={emax}")["total"].fillna(0.).values
+        self.egrid = self.table.query(f"{emin}<=energy<={emax}")["energy"].values
+
+    def set_weights(self,weights):
+        self.total = self.table.drop(["total","tof","energy"],axis=1).mul(weights, axis=1).sum(axis=1).fillna(0.).values
 
     def set_response(self, kind="gauss_norm", **kwargs):
         """
@@ -215,9 +223,10 @@ class CrossSection:
             Array of weighted cross-section values.
         """
         if weights==None or weights==[]:
-            return self.table["total"]
+            return self.total
         else:
-            return self.table.drop(["total","tof","energy"],axis=1).mul(weights, axis=1).sum(axis=1)
+            self.set_weights(weights=weights)
+            return self.total
 
     def plot(self, x="energy",**kwargs):
         """Plot the cross-section data with optional plotting parameters."""

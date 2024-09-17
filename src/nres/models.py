@@ -1,5 +1,7 @@
 import lmfit
 import numpy as np
+import nres.utils as utils
+import pandas
 
 
 
@@ -31,7 +33,9 @@ class TransmissionModelResult(lmfit.model.ModelResult):
         return fig, ax
 
 class TransmissionModel(lmfit.Model):
-    def __init__(self, cross_section, vary_weights=False, vary_background=False, **kwargs):
+    def __init__(self, cross_section, vary_weights=False, 
+                 vary_background=False, 
+                 vary_tof=False,**kwargs):
         """
         Initialize the TransmissionModel, a subclass of lmfit.Model.
 
@@ -64,7 +68,7 @@ class TransmissionModel(lmfit.Model):
         # set the n parameter as fixed
         self.params.add("n", value=0.01, vary=False)
 
-    def transmission(self, E, thickness=1, n=0.01, norm=1., b0=0., b1=0., b2=0.):
+    def transmission(self, E, thickness=1, n=0.01, norm=1., b0=0., b1=0., b2=0.,L0=1.,t0=0.):
         """
         Transmission function model with background components.
 
@@ -88,31 +92,42 @@ class TransmissionModel(lmfit.Model):
         - T: array-like
             The calculated transmission values.
         """
+        tof = utils.energy2time(E,self.cross_section.L)
+        dtof = (1.-L0)*tof + t0
+        E = utils.time2energy(tof+dtof,self.cross_section.L)
+
         # Background polynomial
         bg = b0 + b1 * np.sqrt(E) + b2 * np.sqrt(E)
         
         # Transmission function
-        T = norm * np.exp(-self.cross_section(E) * thickness * n) * (1 - bg) + bg
+        T = norm * np.exp(-self.cross_section() * thickness * n) * (1 - bg) + bg
         return T
 
-    # def fit(self, data, params=None, **kwargs):
-    #     """
-    #     Fit the model to the data.
+    def fit(self, data, params=None, emin=0.5e6, emax=20.e6, **kwargs):
+        """
+        Fit the model to the data.
 
-    #     Parameters:
-    #     - data: array-like
-    #         The data to fit the model to.
-    #     - params: Parameters object, optional
-    #         The initial parameter values for the fit.
-    #     - kwargs: dict
-    #         Additional keyword arguments passed to the lmfit.Model.fit method.
+        Parameters:
+        - data: array-like
+            The data to fit the model to.
+        - params: Parameters object, optional
+            The initial parameter values for the fit.
+        - kwargs: dict
+            Additional keyword arguments passed to the lmfit.Model.fit method.
 
-    #     Returns:
-    #     - TransmissionModelResult
-    #         The result of the fit.
-    #     """
-    #     # Perform the fit using the parent class's fit method
-    #     fit_result = super().fit(data, params=params or self.params, **kwargs)
-    #     return TransmissionModelResult(fit_result, params or self.params)
+        Returns:
+        - TransmissionModelResult
+            The result of the fit.
+        """
+        self.cross_section.set_energy_range(emin,emax)
+        if type(data) == pandas.DataFrame:
+            data = data.query(f"{emin}<energy<{emax}")
+            weights = kwargs.get("weights",1./data["err"].values)
+            fit_result = super().fit(data["trans"].values, params=params or self.params, weights=weights, E=data["energy"].values, **kwargs)
+        else:
+            # Perform the fit using the parent class's fit method
+            fit_result = super().fit(data, params=params or self.params, **kwargs)
+        # return TransmissionModelResult(fit_result, params or self.params)
+        return fit_result
     
 

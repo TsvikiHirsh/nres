@@ -9,7 +9,7 @@ from importlib.metadata import version
 __all__ = ("__version__",)
 __version__ = version(__name__)
 
-from cross_section import CrossSection
-from response import Response
-from models import TransmissionModel
-import utils
+from nres.cross_section import CrossSection
+from nres.response import Response
+from nres.models import TransmissionModel
+import nres.utils as utils

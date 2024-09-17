@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=61", "wheel", "pybind11"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -14,18 +14,14 @@ requires-python = ">=3.8"
 classifiers = [
   "Development Status :: 1 - Planning",
   "Intended Audience :: Science/Research",
-  "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
-  "Programming Language :: Python",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering",
-  "Typing :: Typed",
 ]
 dependencies = []
 
@@ -72,43 +68,43 @@ disallow_incomplete_defs = false
 check_untyped_defs = true
 strict = false
 
-
 [tool.ruff]
 src = ["src"]
 exclude = []
-line-length = 88  # how long you want lines to be
+line-length = 88
 
 [tool.ruff.format]
-docstring-code-format = true  # code snippets in docstrings will be formatted
+docstring-code-format = true
 
 [tool.ruff.lint]
 select = [
-  "E", "F", "W", # flake8
-  "B",           # flake8-bugbear
-  "I",           # isort
-  "ARG",         # flake8-unused-arguments
-  "C4",          # flake8-comprehensions
-  "EM",          # flake8-errmsg
-  "ICN",         # flake8-import-conventions
-  "ISC",         # flake8-implicit-str-concat
-  "G",           # flake8-logging-format
-  "PGH",         # pygrep-hooks
-  "PIE",         # flake8-pie
-  "PL",          # pylint
-  "PT",          # flake8-pytest-style
-  "RET",         # flake8-return
-  "RUF",         # Ruff-specific
-  "SIM",         # flake8-simplify
-  "UP",          # pyupgrade
-  "YTT",         # flake8-2020
-  "EXE",         # flake8-executable
+  "E", "F", "W", 
+  "B",           
+  "I",           
+  "ARG",         
+  "C4",          
+  "EM",          
+  "ICN",         
+  "ISC",         
+  "G",           
+  "PGH",         
+  "PIE",         
+  "PL",          
+  "PT",          
+  "RET",         
+  "RUF",         
+  "SIM",         
+  "UP",          
+  "YTT",         
+  "EXE",         
 ]
 ignore = [
-  "PLR",    # Design related pylint codes
-  "ISC001", # Conflicts with formatter
+  "PLR",    
+  "ISC001",
 ]
 unfixable = [
-  "F401",   # Would remove unused imports
-  "F841",   # Would remove unused variables
+  "F401",   
+  "F841",   
 ]
-flake8-unused-arguments.ignore-variadic-names = true  # allow unused *args/**kwargsisort.required-imports = ["from __future__ import annotations"]
+flake8-unused-arguments.ignore-variadic-names = true
+isort.required-imports = ["from __future__ import annotations"]
