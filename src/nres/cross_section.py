@@ -10,6 +10,7 @@ import site
 from scipy.interpolate import UnivariateSpline
 from scipy.integrate import quad
 import warnings
+from nres._integrate_xs import integrate_cross_section
 
 
 class CrossSection:
@@ -87,7 +88,8 @@ class CrossSection:
 
         # Populate cross-section data for isotopes
         self._populate_isotope_data()
-        self.set_energy_range()
+        self.set_weights(self.weights)
+        # self.set_energy_range()
 
     def _download_xsdata(self):
         """Download the xsdata.npy file from GitHub and save it to the package directory."""
@@ -125,7 +127,7 @@ class CrossSection:
 
             xsdata = np.load(self.file_path, allow_pickle=True)[()]
             self.__xsdata__ = {
-                isotope: pd.Series(xsdata["cross_sections"][i], index=xsdata["energies"][i])
+                isotope: pd.Series(xsdata["cross_sections"][i], index=xsdata["energies"][i],name=isotope)
                 for i, isotope in enumerate(xsdata["isotopes"])
             }
 
@@ -136,7 +138,7 @@ class CrossSection:
         
         for isotope, weight in self.isotopes.items():
             if isinstance(isotope, str):
-                xs[isotope] = self.get_xs(isotope)
+                xs[isotope] = self.__xsdata__[isotope]
                 updated_isotopes[isotope] = weight
             elif isinstance(isotope, CrossSection):
                 xs[isotope.name] = isotope.table["total"].rename(isotope.name)
@@ -144,10 +146,9 @@ class CrossSection:
                 isotope = isotope.name
         
         self.isotopes = updated_isotopes
-        table = pd.DataFrame(xs)
+        table = pd.DataFrame(xs).interpolate()
         table["total"] = (table * self.weights).sum(axis=1)
-        table["tof"] = self.tgrid
-        table["energy"] = self.egrid
+        table.index.name = "energy"
         self.table = table
 
     def get_xs(self, isotope: str = "C-12") -> pd.Series:
@@ -166,32 +167,71 @@ class CrossSection:
         """
         warnings.filterwarnings("ignore")
 
-        # Get the cross-section data and create a linear interpolation function
+        # Get the cross-section data
         xs = self.__xsdata__[isotope]
-        ufunc = UnivariateSpline(xs.index.values, xs.values, k=1, s=0)
 
-        integral = {}
+        # Prepare the input data for the C++ function
+        xs_energies = xs.index.values # Convert index to list
+        xs_values = xs.values         # Convert values to list
+
+        # Define the grid for integration
         grid = np.arange(self.first_tbin, self.tbins + 1 + self.first_tbin, 1)
-        for i, g in enumerate(grid[:-1]):
-            emin = utils.time2energy(grid[i + 1] * self.tstep, self.L)
-            emax = utils.time2energy(grid[i] * self.tstep, self.L)
-            if emin > 0 and emax > 0:
-                result = quad(ufunc, emin, emax)[0] / (emax - emin)
-                integral[g] = result if result >= 0 else 0.
-            else:
-                integral[g] = 0
+        energy_grid = [utils.time2energy(g * self.tstep, self.L) for g in grid]
+
+        # Call the C++ integration function
+        results = integrate_cross_section(xs_energies, xs_values, energy_grid)
+
+        # Convert the results back to a pandas Series
+        integral = {g: result if result >= 0 else 0. for g, result in zip(grid[:-1], results)}
         integral = pd.Series(integral, name=isotope)
         self.tgrid = grid[:-1]
-        self.egrid = utils.time2energy(self.tgrid*self.tstep, self.L)
+        self.egrid = np.array(energy_grid[:-1])
 
         return integral
+
+
+    # def get_xs(self, isotope: str = "C-12") -> pd.Series:
+    #     """
+    #     Retrieve and interpolate the cross-section data for a given isotope.
+
+    #     Parameters:
+    #     ----------
+    #     isotope : str
+    #         The isotope for which to retrieve the cross-section.
+
+    #     Returns:
+    #     -------
+    #     pd.Series
+    #         Interpolated cross-section values for the isotope.
+    #     """
+    #     warnings.filterwarnings("ignore")
+
+    #     # Get the cross-section data and create a linear interpolation function
+    #     xs = self.__xsdata__[isotope]
+    #     ufunc = UnivariateSpline(xs.index.values, xs.values, k=1, s=0)
+
+    #     integral = {}
+    #     grid = np.arange(self.first_tbin, self.tbins + 1 + self.first_tbin, 1)
+    #     for i, g in enumerate(grid[:-1]):
+    #         emin = utils.time2energy(grid[i + 1] * self.tstep, self.L)
+    #         emax = utils.time2energy(grid[i] * self.tstep, self.L)
+    #         if emin > 0 and emax > 0:
+    #             result = quad(ufunc, emin, emax)[0] / (emax - emin)
+    #             integral[g] = result if result >= 0 else 0.
+    #         else:
+    #             integral[g] = 0
+    #     integral = pd.Series(integral, name=isotope)
+    #     self.tgrid = grid[:-1]
+    #     self.egrid = utils.time2energy(self.tgrid*self.tstep, self.L)
+
+    #     return integral
     
     def set_energy_range(self,emin=0.5e6,emax=2.0e7):
         self.total = self.table.query(f"{emin}<=energy<={emax}")["total"].fillna(0.).values
         self.egrid = self.table.query(f"{emin}<=energy<={emax}")["energy"].values
 
     def set_weights(self,weights):
-        self.total = self.table.drop(["total","tof","energy"],axis=1).mul(weights, axis=1).sum(axis=1).fillna(0.).values
+        self.total = self.table.drop(["total"],axis=1).mul(weights, axis=1).sum(axis=1).fillna(0.)
 
     def set_response(self, kind="gauss_norm", **kwargs):
         """
@@ -208,7 +248,7 @@ class CrossSection:
         tof = utils.energy2time(self.table.index.values, self.L)
         self.table["response_total"] = convolve(self.table["total"], self.response(tof, **kwargs), "same")
 
-    def __call__(self, weights = None):
+    def __call__(self, E, weights = None):
         """
         Calculate the weighted cross-section for a given set of energies.
 
@@ -223,13 +263,12 @@ class CrossSection:
             Array of weighted cross-section values.
         """
         if weights==None or weights==[]:
-            return self.total
+            return integrate_cross_section(self.total.index.values, self.total.values, E)
         else:
             self.set_weights(weights=weights)
-            return self.total
+            return integrate_cross_section(self.total.index.values, self.total.values, E)
 
-    def plot(self, x="energy",**kwargs):
+    def plot(self,**kwargs):
         """Plot the cross-section data with optional plotting parameters."""
-        drop = "tof" if x=="energy" else "energy"
-        self.table.set_index(x).drop(drop,axis=1).mul(np.r_[self.weights, 1], axis=1).plot(**kwargs)
+        self.table.mul(np.r_[self.weights, 1], axis=1).plot(**kwargs)
 
