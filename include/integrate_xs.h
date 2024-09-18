@@ -2,11 +2,15 @@
 #define INTEGRATE_XS_H
 
 #include <vector>
+#include <string>  // For std::string
 
-// Declare the function with the correct signature
+// Declare the function with default parameters
 std::vector<double> integrate_cross_section(
-    const std::vector<double>& xs_energies,  // Energy grid of cross-section data
-    const std::vector<double>& xs_values,    // Cross-section values corresponding to xs_energies
-    const std::vector<double>& energy_grid);  // User-defined energy grid for integration
+    const std::vector<double>& xs_energies,  // Cross-section energies
+    const std::vector<double>& xs_values,    // Cross-section values
+    const std::vector<double>& energy_grid,  // User energy grid
+    const std::vector<double>& response = std::vector<double>{0.,1.,0.},  // Default response vector
+    double flight_path_length = 10.0d  // Default flight path length 
+);
 
 #endif // INTEGRATE_XS_H

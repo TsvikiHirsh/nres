@@ -248,7 +248,7 @@ class CrossSection:
         tof = utils.energy2time(self.table.index.values, self.L)
         self.table["response_total"] = convolve(self.table["total"], self.response(tof, **kwargs), "same")
 
-    def __call__(self, E, weights = None):
+    def __call__(self, E, weights = None,response=[0.,1.,0.]):
         """
         Calculate the weighted cross-section for a given set of energies.
 
@@ -263,10 +263,10 @@ class CrossSection:
             Array of weighted cross-section values.
         """
         if weights==None or weights==[]:
-            return integrate_cross_section(self.total.index.values, self.total.values, E)
+            pass
         else:
             self.set_weights(weights=weights)
-            return integrate_cross_section(self.total.index.values, self.total.values, E)
+        return integrate_cross_section(self.total.index.values, self.total.values, E, response, self.L)
 
     def plot(self,**kwargs):
         """Plot the cross-section data with optional plotting parameters."""
