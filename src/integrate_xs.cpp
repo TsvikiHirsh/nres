@@ -78,7 +78,7 @@ std::vector<double> convolve_with_kernel(const std::vector<double>& values, cons
     return result;
 }
 
-// Trapezoidal integration of cross sections using all points within the bin
+// Updated trapezoidal integration of cross sections
 std::vector<double> integrate_cross_section(
     const std::vector<double>& xs_energies,      // Energy grid of cross-section data
     const std::vector<double>& xs_values,        // Cross-section values corresponding to xs_energies
@@ -131,7 +131,9 @@ std::vector<double> integrate_cross_section(
             integral += 0.5 * (y1 + y2) * (x2 - x1);
         }
 
-        integrated_values.push_back(integral);
+        // Calculate the average cross-section for this bin
+        double avg_xs = integral / (emax - emin);
+        integrated_values.push_back(avg_xs);
     }
 
     // If a kernel is provided, convolve the result in the time domain
