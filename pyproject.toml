@@ -23,7 +23,17 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering",
 ]
-dependencies = []
+dependencies = [
+  "scipy",
+  "pandas",
+  "numpy",
+  "materials-compendium",
+  "lmfit",
+  "pybind11",
+  "Requests",
+  "setuptools",
+  "tqdm"
+]
 
 [project.optional-dependencies]
 dev = [

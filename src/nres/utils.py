@@ -32,3 +32,27 @@ def energy2time(energy, flight_path_length):
     """
     γ = 1 + energy / (MASS_OF_NEUTRON * SPEED_OF_LIGHT ** 2)
     return flight_path_length / SPEED_OF_LIGHT * np.sqrt(γ ** 2 / (γ ** 2 - 1))
+
+def materials_dict():
+    import materials_compendium as mc
+    materials = {}
+    for material in mc.MaterialsCompendium:
+        mat_name = material.Name
+        density = material.Density
+        n = material.MaterialAtomDensity
+        formula = material.Formula
+        elements = {}
+        for element in a1.Elements:
+            name = element.Element
+            weight = element.WeightFraction_whole
+            elements[name] = {"weight":weight}
+            isotopes = {}
+            for isotope in element.Isotopes:
+                iso_name = isotope.Isotope
+                iso_weight = isotope.WeightFraction
+                isotopes[iso_name] = iso_weight
+            elements[name]["isotopes"] = isotopes
+        materials[mat_name] = {"density":density,"n":n,"formula":formula,"elements":elements}
+
+    return materials
+    
