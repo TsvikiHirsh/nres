@@ -12,6 +12,15 @@ from scipy.integrate import quad
 import warnings
 from nres._integrate_xs import integrate_cross_section
 
+def material_cross_section(mat, short_name: str = ""):
+    xs_elements = {}
+    for element in mat["elements"]:
+        xs = CrossSection(mat["elements"][element]["isotopes"],name=element)
+        xs_elements[xs] = mat["elements"][element]["weight"]
+    short_name = short_name if short_name else mat["name"]
+    xs = CrossSection(xs_elements,name=short_name)
+    return xs
+
 
 class CrossSection:
     """
@@ -86,6 +95,8 @@ class CrossSection:
         self.tstep = tstep
         self.tbins = tbins
 
+
+
         # Populate cross-section data for isotopes
         self._populate_isotope_data()
         self.set_weights(self.weights)
@@ -130,6 +141,8 @@ class CrossSection:
                 isotope: pd.Series(xsdata["cross_sections"][i], index=xsdata["energies"][i],name=isotope)
                 for i, isotope in enumerate(xsdata["isotopes"])
             }
+
+
 
     def _populate_isotope_data(self):
         """Populate cross-section data for the isotopes and compute weighted total."""

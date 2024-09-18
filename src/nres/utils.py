@@ -42,17 +42,28 @@ def materials_dict():
         n = material.MaterialAtomDensity
         formula = material.Formula
         elements = {}
-        for element in a1.Elements:
+        for element in material.Elements:
             name = element.Element
             weight = element.WeightFraction_whole
             elements[name] = {"weight":weight}
             isotopes = {}
             for isotope in element.Isotopes:
-                iso_name = isotope.Isotope
+                iso_name = format_isotope(isotope.Isotope)
                 iso_weight = isotope.WeightFraction
                 isotopes[iso_name] = iso_weight
             elements[name]["isotopes"] = isotopes
-        materials[mat_name] = {"density":density,"n":n,"formula":formula,"elements":elements}
+        materials[mat_name] = {"name":mat_name,"density":density,"n":n,"formula":formula,"elements":elements}
 
     return materials
-    
+
+def format_isotope(isotope_string):
+    # Find where the digits start in the string
+    for i, char in enumerate(isotope_string):
+        if char.isdigit():
+            # Split the string into element and mass number parts
+            element = isotope_string[:i]
+            mass_number = isotope_string[i:]
+            # Return the formatted string
+            return f"{element}-{mass_number}"
+    # Return the original string if no digits are found
+    return isotope_string
