@@ -32,7 +32,8 @@ dependencies = [
   "pybind11",
   "Requests",
   "setuptools",
-  "tqdm"
+  "tqdm",
+  "mendeleev"
 ]
 
 [project.optional-dependencies]
