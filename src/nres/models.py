@@ -1,6 +1,7 @@
 import lmfit
 import numpy as np
 import nres.utils as utils
+from nres.response import Response
 import pandas
 
 
@@ -66,9 +67,14 @@ class TransmissionModel(lmfit.Model):
             self.params.add(b, value=bg_args[b], vary=vary_background)
 
         # set the n parameter as fixed
-        self.params.add("n", value=0.01, vary=False)
+        if self.cross_section.n:
+            self.params.add("n", value=self.cross_section.n, vary=False)
+        else:
+            self.params.add("n", value=0.01, vary=False)
 
-    def transmission(self, E, thickness=1, n=0.01, norm=1., b0=0., b1=0., b2=0.,L0=1.,t0=0.):
+        self.response = Response()
+
+    def transmission(self, E, thickness=1, n=0.01, norm=1., b0=0., b1=0., b2=0.,L0=1.,t0=0.,**response_kw):
         """
         Transmission function model with background components.
 
@@ -99,8 +105,9 @@ class TransmissionModel(lmfit.Model):
         # Background polynomial
         bg = b0 + b1 * np.sqrt(E) + b2 * np.sqrt(E)
         
+        response = self.response.function(**response_kw)
         # Transmission function
-        T = norm * np.exp(-self.cross_section(E) * thickness * n) * (1 - bg) + bg
+        T = norm * np.exp(-self.cross_section(E,response=response) * thickness * n) * (1 - bg) + bg
         return T
 
     def fit(self, data, params=None, emin=0.5e6, emax=20.e6, **kwargs):

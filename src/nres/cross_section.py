@@ -19,6 +19,7 @@ def from_material(mat, short_name: str = ""):
         xs_elements[xs] = mat["elements"][element]["weight"]
     short_name = short_name if short_name else mat["name"]
     xs = CrossSection(xs_elements,name=short_name)
+    xs.n = mat["n"]
     return xs
 
 
@@ -78,6 +79,7 @@ class CrossSection:
         """
         self.isotopes = isotopes
         self.weights = np.array(list(self.isotopes.values()), float)
+        self.weights = self.weights[self.weights>0] # remove weight=0 isotopes
         self.weights /= self.weights.sum()  # Normalize weights
         self.L = L
         self.name = name
@@ -148,14 +150,17 @@ class CrossSection:
         """Populate cross-section data for the isotopes and compute weighted total."""
         xs = {}
         updated_isotopes = {}
-        
+        self.n = 0.
         for isotope, weight in self.isotopes.items():
             if isinstance(isotope, str):
-                xs[isotope] = self.__xsdata__[isotope]
-                updated_isotopes[isotope] = weight
+                if weight>0:
+                    xs[isotope] = self.__xsdata__[isotope]
+                    updated_isotopes[isotope] = weight
+                    self.n = np.NaN
             elif isinstance(isotope, CrossSection):
                 xs[isotope.name] = isotope.table["total"].rename(isotope.name)
                 updated_isotopes[isotope.name] = weight
+                self.n+=isotope.n*weight
                 isotope = isotope.name
         
         self.isotopes = updated_isotopes
