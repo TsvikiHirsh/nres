@@ -100,7 +100,7 @@ class TransmissionModel(lmfit.Model):
         bg = b0 + b1 * np.sqrt(E) + b2 * np.sqrt(E)
         
         # Transmission function
-        T = norm * np.exp(-self.cross_section() * thickness * n) * (1 - bg) + bg
+        T = norm * np.exp(-self.cross_section(E) * thickness * n) * (1 - bg) + bg
         return T
 
     def fit(self, data, params=None, emin=0.5e6, emax=20.e6, **kwargs):
@@ -119,7 +119,7 @@ class TransmissionModel(lmfit.Model):
         - TransmissionModelResult
             The result of the fit.
         """
-        self.cross_section.set_energy_range(emin,emax)
+        # self.cross_section.set_energy_range(emin,emax)
         if type(data) == pandas.DataFrame:
             data = data.query(f"{emin}<energy<{emax}")
             weights = kwargs.get("weights",1./data["err"].values)

@@ -50,11 +50,33 @@ def materials_dict():
             for isotope in element.Isotopes:
                 iso_name = format_isotope(isotope.Isotope)
                 iso_weight = isotope.WeightFraction
-                isotopes[iso_name] = iso_weight
+                if iso_weight>0:
+                    isotopes[iso_name] = iso_weight
             elements[name]["isotopes"] = isotopes
         materials[mat_name] = {"name":mat_name,"density":density,"n":n,"formula":formula,"elements":elements}
-
+    import shelve
+    with shelve.open("evaluated_data/materials") as fid:
+        fid["materials"] = materials
     return materials
+
+def elements_dict():
+    mat = {}
+    import mendeleev
+    for element in mendeleev.get_all_elements():
+        name = element.name
+        if not element.is_radioactive:
+            mat[name] = {}
+        
+            mat[name]["name"] = name
+            mat[name]["n"] = element.density/element.mass*0.602214076 # atoms/barn
+            mat[name]["formula"] = element.symbol
+            mat[name]["density"] = element.density
+            mat[name]["elements"] = {element.symbol:{"weight":1}}
+            mat[name]["elements"][element.symbol]["isotopes"] = {f"{iso.element.symbol}-{iso.mass_number}":iso.abundance*0.01 if iso.abundance else 0 for iso in element.isotopes if iso.is_stable}
+    import shelve
+    with shelve.open("evaluated_data/materials") as fid:
+        fid["elements"] = mat
+    return mat
 
 def format_isotope(isotope_string):
     # Find where the digits start in the string

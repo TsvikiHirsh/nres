@@ -12,7 +12,7 @@ from scipy.integrate import quad
 import warnings
 from nres._integrate_xs import integrate_cross_section
 
-def material_cross_section(mat, short_name: str = ""):
+def from_material(mat, short_name: str = ""):
     xs_elements = {}
     for element in mat["elements"]:
         xs = CrossSection(mat["elements"][element]["isotopes"],name=element)
@@ -240,8 +240,8 @@ class CrossSection:
     #     return integral
     
     def set_energy_range(self,emin=0.5e6,emax=2.0e7):
-        self.total = self.table.query(f"{emin}<=energy<={emax}")["total"].fillna(0.).values
-        self.egrid = self.table.query(f"{emin}<=energy<={emax}")["energy"].values
+        self.total = self.table["total"].loc[emin:emax].fillna(0.).values
+        self.egrid = self.table["total"].loc[emin:emax].fillna(0.).index.values
 
     def set_weights(self,weights):
         self.total = self.table.drop(["total"],axis=1).mul(weights, axis=1).sum(axis=1).fillna(0.)
@@ -279,7 +279,7 @@ class CrossSection:
             pass
         else:
             self.set_weights(weights=weights)
-        return integrate_cross_section(self.total.index.values, self.total.values, E, response, self.L)
+        return np.array(integrate_cross_section(self.total.index.values, self.total.values, E, response, self.L))
 
     def plot(self,**kwargs):
         """Plot the cross-section data with optional plotting parameters."""
