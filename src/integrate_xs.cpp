@@ -9,7 +9,7 @@ const double MASS_OF_NEUTRON = 939.56542052 * 1e6 / (SPEED_OF_LIGHT * SPEED_OF_L
 // Linear interpolation function
 double linear_interp(const std::vector<double>& xs_energies, const std::vector<double>& xs_values, double energy) {
     size_t n = xs_energies.size();
-    
+
     // If the energy is out of bounds, return 0 (or handle as needed)
     if (energy <= xs_energies.front()) return xs_values.front();
     if (energy >= xs_energies.back()) return xs_values.back();
@@ -21,7 +21,7 @@ double linear_interp(const std::vector<double>& xs_energies, const std::vector<d
             return xs_values[i] + slope * (energy - xs_energies[i]);
         }
     }
-    
+
     return 0.0; // Default return in case of error
 }
 
@@ -64,12 +64,12 @@ double energy2time(double energy, double flight_path_length) {
 std::vector<double> convolve_with_kernel(const std::vector<double>& values, const std::vector<double>& kernel) {
     std::vector<double> result(values.size(), 0.0);
     int kernel_half_size = kernel.size() / 2;
-    
+
     for (size_t i = 0; i < values.size(); ++i) {
         double conv_sum = 0.0;
         for (int j = -kernel_half_size; j <= kernel_half_size; ++j) {
             int idx = i + j;
-            if (idx >= 0 && idx < values.size()) {
+            if (static_cast<size_t>(idx) >= 0 && idx < values.size()) {
                 conv_sum += values[idx] * kernel[kernel_half_size + j];
             }
         }
@@ -77,8 +77,7 @@ std::vector<double> convolve_with_kernel(const std::vector<double>& values, cons
     }
     return result;
 }
-
-// Updated trapezoidal integration of cross sections
+// Updated trapezoidal integration of cross sections with extended grid
 std::vector<double> integrate_cross_section(
     const std::vector<double>& xs_energies,      // Energy grid of cross-section data
     const std::vector<double>& xs_values,        // Cross-section values corresponding to xs_energies
@@ -86,15 +85,27 @@ std::vector<double> integrate_cross_section(
     const std::vector<double>& kernel,           // Optional kernel for convolution
     double flight_path_length = 1.0)             // Flight path length (in meters), default is 1 meter
 {
+    // Calculate the number of bins to add based on the kernel length
+    int num_bins_to_add = kernel.empty() ? 0 : kernel.size() / 2;
+
+    // Extend the energy grid
+    std::vector<double> extended_energy_grid = energy_grid;
+    for (int i = 0; i < num_bins_to_add; ++i) {
+        // Add prefix bin
+        double new_prefix = energy_grid.front() * std::pow(energy_grid.front() / energy_grid[1], i + 1);
+        extended_energy_grid.insert(extended_energy_grid.begin(), new_prefix);
+        
+        // Add suffix bin
+        double new_suffix = energy_grid.back() * std::pow(energy_grid.back() / energy_grid[energy_grid.size() - 2], i + 1);
+        extended_energy_grid.push_back(new_suffix);
+    }
+
     std::vector<double> integrated_values;
 
-    // Add a new bin based on the spacing pattern and update the energy grid
-    std::vector<double> updated_grid = add_prefix_bin(energy_grid);
-
-    // Loop over the energy bins and perform the trapezoidal integration using all points within the bin
-    for (size_t i = 0; i < updated_grid.size() - 1; ++i) {
-        double emin = updated_grid[i];
-        double emax = updated_grid[i + 1];
+    // Perform integration over the extended energy grid
+    for (size_t i = 0; i < extended_energy_grid.size() - 1; ++i) {
+        double emin = extended_energy_grid[i];
+        double emax = extended_energy_grid[i + 1];
 
         if (emin <= 0 || emax <= 0) {
             integrated_values.push_back(0.0);
@@ -136,9 +147,15 @@ std::vector<double> integrate_cross_section(
         integrated_values.push_back(avg_xs);
     }
 
-    // If a kernel is provided, convolve the result in the time domain
+    // If a kernel is provided, convolve the result
     if (!kernel.empty()) {
         integrated_values = convolve_with_kernel(integrated_values, kernel);
+    }
+
+    // Trim the result to match the original energy grid size
+    if (num_bins_to_add > 0) {
+        integrated_values.erase(integrated_values.begin(), integrated_values.begin() + num_bins_to_add - 1);
+        integrated_values.erase(integrated_values.end() - num_bins_to_add, integrated_values.end());
     }
 
     return integrated_values;
