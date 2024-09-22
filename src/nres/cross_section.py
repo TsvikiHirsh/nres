@@ -9,9 +9,17 @@ from scipy.interpolate import UnivariateSpline
 from scipy.integrate import quad
 import warnings
 from nres._integrate_xs import integrate_cross_section
+import nres
 from copy import copy
 
-def from_material(mat, short_name: str = "", break_isotopes: bool = False):
+def from_material(mat, short_name: str = "",total_weight=1.):
+    if isinstance(mat,str):
+        formulas = {nres.materials[element]["formula"]:nres.materials[element]["name"] for element in nres.materials}
+        if mat in formulas:
+            mat = nres.materials[formulas[mat]]
+        else:
+            mat = nres.materials[mat]
+
     xs_elements = {}
     for element in mat["elements"]:
         xs = CrossSection(mat["elements"][element]["isotopes"],name=element)
@@ -21,7 +29,19 @@ def from_material(mat, short_name: str = "", break_isotopes: bool = False):
     xs.n = mat["n"]
     return xs
 
+def from_element(mat,short_name: str = "",total_weight=1.):
 
+    if isinstance(mat,str):
+        formulas = {nres.elements[element]["formula"]:nres.elements[element]["name"] for element in nres.elements}
+        if mat in formulas:
+            mat = nres.elements[formulas[mat]]
+        else:
+            mat = nres.elements[mat]
+    element = list(mat["elements"].keys())[0]
+    short_name = short_name if short_name else mat["name"]
+    xs = CrossSection(mat["elements"][element]["isotopes"],name=short_name,total_weight=total_weight)
+    xs.n = mat["n"]
+    return xs
 
 class CrossSection:
     """
@@ -92,20 +112,12 @@ class CrossSection:
         self.ufuncs = []
         self.total_weight = total_weight
 
-        # Define the filename and location in site-packages
-        cache_path = utils.get_cache_path() / "xsdata.npy"
-        self.file_name = 'xsdata.npy'
-        self.package_dir = os.path.join(site.getsitepackages()[0], 'cross_section_data')
-        self.file_path = os.path.join(self.package_dir, self.file_name)
-
         self.__xsdata__ = None
         self._load_xsdata()
 
         self.first_tbin = first_tbin
         self.tstep = tstep
         self.tbins = tbins
-
-
 
         # Populate cross-section data for isotopes
         self._populate_isotope_data()
@@ -126,8 +138,6 @@ class CrossSection:
                 for i, isotope in enumerate(xsdata["isotopes"])
             }
 
-
-
     def _populate_isotope_data(self):
         """Populate cross-section data for the isotopes and compute weighted total."""
         xs = {}
@@ -147,11 +157,10 @@ class CrossSection:
 
         self.isotopes = updated_isotopes
         table = pd.DataFrame(xs).interpolate()
-        # table["total"] = (table * self.weights).sum(axis=1)
         table.index.name = "energy"
         self.table = table
 
-    def set_energy_range(self,emin=0.5e6,emax=2.0e7):
+    def _set_energy_range(self,emin=0.5e6,emax=2.0e7):
         self.total = self.table["total"].loc[emin:emax].fillna(0.).values
         self.egrid = self.table["total"].loc[emin:emax].fillna(0.).index.values
 
@@ -162,9 +171,7 @@ class CrossSection:
         self.weights = self.weights[self.weights>0] # remove weight=0 isotopes
         self.weights /= self.weights.sum()  # Normalize weights
         self.table["total"] =  (self.table * self.weights).sum(axis=1)
-        # self.total = self.table.drop(["total"],axis=1).mul(weights, axis=1).sum(axis=1).fillna(0.)
-        # self.egrid = self.total.index.values
-        # self.total = self.total.values
+
 
     def __add__(self,other):
         """Add a cross section object
@@ -240,11 +247,18 @@ class CrossSection:
 
     def plot(self,**kwargs):
         """Plot the cross-section data with optional plotting parameters."""
-        title = kwargs.get("title","Cross section")
+        title = kwargs.get("title",self.name)
         ylabel = kwargs.get("ylabel","$\sigma$ [barn]")
         xlabel = kwargs.get("xlabel","Energy [eV]")
-        self.table.mul(np.r_[self.weights, 1], axis=1).plot(title=title,
-                                                            xlabel=xlabel,
-                                                            ylabel=ylabel,
-                                                            **kwargs)
+        lw = kwargs.get("lw",1.)
+        # rename columns
+
+        table = self.table.mul(np.r_[self.weights,1.], axis=1)
+        table.columns = [f"{column}: {weight*100:>6.2f}%" for column,weight in self.weights.items()] + ["total"]
+        ax = table.drop("total",axis=1).plot(title=title,
+                                                xlabel=xlabel,
+                                                ylabel=ylabel,
+                                                lw = lw,
+                                                **kwargs)
+        table.plot(y="total",lw=1.5,ax=ax,color="0.2")
 

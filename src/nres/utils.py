@@ -67,15 +67,15 @@ def elements_dict():
     import mendeleev
     for element in mendeleev.get_all_elements():
         name = element.name
-        if not element.is_radioactive:
-            mat[name] = {}
-        
-            mat[name]["name"] = name
-            mat[name]["n"] = element.density/element.mass*0.602214076 # atoms/barn
-            mat[name]["formula"] = element.symbol
-            mat[name]["density"] = element.density
-            mat[name]["elements"] = {element.symbol:{"weight":1}}
-            mat[name]["elements"][element.symbol]["isotopes"] = {f"{iso.element.symbol}-{iso.mass_number}":iso.abundance*0.01 if iso.abundance else 0 for iso in element.isotopes if iso.is_stable}
+        # if not element.is_radioactive:
+        mat[name] = {}
+    
+        mat[name]["name"] = name
+        mat[name]["n"] = element.density/element.mass*0.602214076 # atoms/barn
+        mat[name]["formula"] = element.symbol
+        mat[name]["density"] = element.density
+        mat[name]["elements"] = {element.symbol:{"weight":1}}
+        mat[name]["elements"][element.symbol]["isotopes"] = {f"{iso.element.symbol}-{iso.mass_number}":iso.abundance*0.01 for iso in element.isotopes if iso.abundance}
     return mat
 
 def format_isotope(isotope_string):
@@ -112,7 +112,7 @@ def load_or_create_materials_cache():
         
         return materials, elements
     else:
-        return create_and_save_cache()
+        return create_and_save_materials_cache()
 
 def create_and_save_materials_cache():
     materials = materials_dict()
