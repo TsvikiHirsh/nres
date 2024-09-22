@@ -106,8 +106,10 @@ class TransmissionModel(lmfit.Model):
         bg = b0 + b1 * np.sqrt(E) + b2 * np.sqrt(E)
         
         response = self.response.function(**response_kw)
+        weights = [response_kw.get(key,self.cross_section.isotopes[key]) for key in self.cross_section.isotopes]
         # Transmission function
-        T = norm * np.exp(-self.cross_section(E,response=response) * thickness * n) * (1 - bg) + bg
+        xs = self.cross_section(E,weights=weights,response=response)
+        T = norm * np.exp(- xs * thickness * n) * (1 - bg) + bg
         return T
 
     def fit(self, data, params=None, emin=0.5e6, emax=20.e6, **kwargs):
