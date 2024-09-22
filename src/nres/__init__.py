@@ -15,13 +15,4 @@ from nres.response import Response
 from nres.models import TransmissionModel
 import nres.utils as utils
 
-
-# dbfile = "evaluated_data/materials"
-# if Path(dbfile).exists():
-#     with shelve.open(dbfile) as fid:
-#         materials = fid["materials"]
-#         elements = fid["elements"]
-# else:
-#     # create the database
-materials = utils.materials_dict()
-    # elements = utils.elements_dict()
+materials, elements = utils.load_or_create_cache()

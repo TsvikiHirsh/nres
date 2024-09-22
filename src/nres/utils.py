@@ -1,4 +1,8 @@
 import numpy as np
+import site
+import os
+from pathlib import Path
+import shelve
 
 # Constants
 SPEED_OF_LIGHT = 299792458  # m/s
@@ -54,9 +58,6 @@ def materials_dict():
                     isotopes[iso_name] = iso_weight
             elements[name]["isotopes"] = isotopes
         materials[mat_name] = {"name":mat_name,"density":density,"n":n,"formula":formula,"elements":elements}
-    import shelve
-    with shelve.open("evaluated_data/materials") as fid:
-        fid["materials"] = materials
     return materials
 
 def elements_dict():
@@ -73,9 +74,6 @@ def elements_dict():
             mat[name]["density"] = element.density
             mat[name]["elements"] = {element.symbol:{"weight":1}}
             mat[name]["elements"][element.symbol]["isotopes"] = {f"{iso.element.symbol}-{iso.mass_number}":iso.abundance*0.01 if iso.abundance else 0 for iso in element.isotopes if iso.is_stable}
-    import shelve
-    with shelve.open("evaluated_data/materials") as fid:
-        fid["elements"] = mat
     return mat
 
 def format_isotope(isotope_string):
@@ -89,3 +87,38 @@ def format_isotope(isotope_string):
             return f"{element}-{mass_number}"
     # Return the original string if no digits are found
     return isotope_string
+
+def get_cache_path():
+    # Get the user's site-packages directory
+    user_site = site.getusersitepackages()
+    # Create a subdirectory for our cache
+    cache_dir = Path(user_site) / "nres"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / "materials.db"
+
+def load_or_create_cache():
+    cache_path = get_cache_path()
+    
+    if cache_path.exists():
+        with shelve.open(str(cache_path.stem)) as fid:
+            materials = fid.get("materials")
+            elements = fid.get("elements")
+        
+        # If the cache is incomplete, regenerate it
+        if materials is None or elements is None:
+            return create_and_save_cache()
+        
+        return materials, elements
+    else:
+        return create_and_save_cache()
+
+def create_and_save_cache():
+    materials = materials_dict()
+    elements = elements_dict()
+    
+    cache_path = get_cache_path()
+    with shelve.open(str(cache_path.stem)) as fid:
+        fid["materials"] = materials
+        fid["elements"] = elements
+    
+    return materials, elements

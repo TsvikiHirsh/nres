@@ -59,7 +59,7 @@ class CrossSection:
                  tstep: float = 1.56255e-9,
                  tbins: int = 640,
                  first_tbin: int = 1):
-        """
+        """ 
         Initialize the CrossSection class with isotopes, weights, and other parameters.
 
         Parameters:
@@ -284,9 +284,16 @@ class CrossSection:
             pass
         else:
             self.set_weights(weights=weights)
+        response = response if len(response) else [0.]
         return np.array(integrate_cross_section(self.total.index.values, self.total.values, E, response, self.L))
 
     def plot(self,**kwargs):
         """Plot the cross-section data with optional plotting parameters."""
-        self.table.mul(np.r_[self.weights, 1], axis=1).plot(**kwargs)
+        title = kwargs.get("title","Cross section")
+        ylabel = kwargs.get("ylabel","$\sigma$ [barn]")
+        xlabel = kwargs.get("xlabel","Energy [eV]")
+        self.table.mul(np.r_[self.weights, 1], axis=1).plot(title=title,
+                                                            xlabel=xlabel,
+                                                            ylabel=ylabel,
+                                                            **kwargs)
 
