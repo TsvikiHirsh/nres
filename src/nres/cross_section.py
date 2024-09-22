@@ -1,11 +1,9 @@
 import os
-import requests
 import pandas as pd
 import numpy as np
 from nres.response import Response
 import nres.utils as utils
 from scipy.signal import convolve
-from tqdm import tqdm
 import site
 from scipy.interpolate import UnivariateSpline
 from scipy.integrate import quad
@@ -101,44 +99,17 @@ class CrossSection:
 
         # Populate cross-section data for isotopes
         self._populate_isotope_data()
-        self.set_weights(self.weights)
-        # self.set_energy_range()
 
-    def _download_xsdata(self):
-        """Download the xsdata.npy file from GitHub and save it to the package directory."""
-        url = 'https://github.com/lanl/trinidi-data/blob/main/xsdata.npy?raw=true'
-
-        # Create the folder if it doesn't exist
-        if not os.path.exists(self.package_dir):
-            os.makedirs(self.package_dir)
-
-        # Download with progress bar
-        response = requests.get(url, stream=True)
-        if response.status_code == 200:
-            total_size = int(response.headers.get('content-length', 0))
-            with open(self.file_path, 'wb') as f, tqdm(
-                desc=f"Downloading {self.file_path}",
-                total=total_size,
-                unit='B',
-                unit_scale=True,
-                unit_divisor=1024,
-                ncols=80
-            ) as bar:
-                for data in response.iter_content(chunk_size=1024):
-                    f.write(data)
-                    bar.update(len(data))
-            print(f"File downloaded and saved to {self.file_path}")
-        else:
-            raise Exception(f"Failed to download the file. Status code: {response.status_code}")
 
     def _load_xsdata(self):
         """Load the xsdata.npy file into the object."""
         if self.__xsdata__ is None:
-            if not os.path.exists(self.file_path):
-                print(f"File not found at {self.file_path}, downloading...")
-                self._download_xsdata()
+            cache_path = utils.get_cache_path() / "xsdata.npy"
+            if not os.path.exists(cache_path):
+                print(f"File not found at {cache_path}, downloading...")
+                utils.download_xsdata()
 
-            xsdata = np.load(self.file_path, allow_pickle=True)[()]
+            xsdata = np.load(cache_path, allow_pickle=True)[()]
             self.__xsdata__ = {
                 isotope: pd.Series(xsdata["cross_sections"][i], index=xsdata["energies"][i],name=isotope)
                 for i, isotope in enumerate(xsdata["isotopes"])
@@ -169,81 +140,6 @@ class CrossSection:
         table.index.name = "energy"
         self.table = table
 
-    def get_xs(self, isotope: str = "C-12") -> pd.Series:
-        """
-        Retrieve and interpolate the cross-section data for a given isotope.
-
-        Parameters:
-        ----------
-        isotope : str
-            The isotope for which to retrieve the cross-section.
-
-        Returns:
-        -------
-        pd.Series
-            Interpolated cross-section values for the isotope.
-        """
-        warnings.filterwarnings("ignore")
-
-        # Get the cross-section data
-        xs = self.__xsdata__[isotope]
-
-        # Prepare the input data for the C++ function
-        xs_energies = xs.index.values # Convert index to list
-        xs_values = xs.values         # Convert values to list
-
-        # Define the grid for integration
-        grid = np.arange(self.first_tbin, self.tbins + 1 + self.first_tbin, 1)
-        energy_grid = [utils.time2energy(g * self.tstep, self.L) for g in grid]
-
-        # Call the C++ integration function
-        results = integrate_cross_section(xs_energies, xs_values, energy_grid)
-
-        # Convert the results back to a pandas Series
-        integral = {g: result if result >= 0 else 0. for g, result in zip(grid[:-1], results)}
-        integral = pd.Series(integral, name=isotope)
-        self.tgrid = grid[:-1]
-        self.egrid = np.array(energy_grid[:-1])
-
-        return integral
-
-
-    # def get_xs(self, isotope: str = "C-12") -> pd.Series:
-    #     """
-    #     Retrieve and interpolate the cross-section data for a given isotope.
-
-    #     Parameters:
-    #     ----------
-    #     isotope : str
-    #         The isotope for which to retrieve the cross-section.
-
-    #     Returns:
-    #     -------
-    #     pd.Series
-    #         Interpolated cross-section values for the isotope.
-    #     """
-    #     warnings.filterwarnings("ignore")
-
-    #     # Get the cross-section data and create a linear interpolation function
-    #     xs = self.__xsdata__[isotope]
-    #     ufunc = UnivariateSpline(xs.index.values, xs.values, k=1, s=0)
-
-    #     integral = {}
-    #     grid = np.arange(self.first_tbin, self.tbins + 1 + self.first_tbin, 1)
-    #     for i, g in enumerate(grid[:-1]):
-    #         emin = utils.time2energy(grid[i + 1] * self.tstep, self.L)
-    #         emax = utils.time2energy(grid[i] * self.tstep, self.L)
-    #         if emin > 0 and emax > 0:
-    #             result = quad(ufunc, emin, emax)[0] / (emax - emin)
-    #             integral[g] = result if result >= 0 else 0.
-    #         else:
-    #             integral[g] = 0
-    #     integral = pd.Series(integral, name=isotope)
-    #     self.tgrid = grid[:-1]
-    #     self.egrid = utils.time2energy(self.tgrid*self.tstep, self.L)
-
-    #     return integral
-    
     def set_energy_range(self,emin=0.5e6,emax=2.0e7):
         self.total = self.table["total"].loc[emin:emax].fillna(0.).values
         self.egrid = self.table["total"].loc[emin:emax].fillna(0.).index.values

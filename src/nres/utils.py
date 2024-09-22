@@ -3,6 +3,8 @@ import site
 import os
 from pathlib import Path
 import shelve
+from tqdm import tqdm
+import requests
 
 # Constants
 SPEED_OF_LIGHT = 299792458  # m/s
@@ -94,10 +96,10 @@ def get_cache_path():
     # Create a subdirectory for our cache
     cache_dir = Path(user_site) / "nres"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir / "materials.db"
+    return cache_dir
 
-def load_or_create_cache():
-    cache_path = get_cache_path()
+def load_or_create_materials_cache():
+    cache_path = get_cache_path() / "materials.db"
     
     if cache_path.exists():
         with shelve.open(str(cache_path.stem)) as fid:
@@ -106,19 +108,48 @@ def load_or_create_cache():
         
         # If the cache is incomplete, regenerate it
         if materials is None or elements is None:
-            return create_and_save_cache()
+            return create_and_save_materials_cache()
         
         return materials, elements
     else:
         return create_and_save_cache()
 
-def create_and_save_cache():
+def create_and_save_materials_cache():
     materials = materials_dict()
     elements = elements_dict()
     
-    cache_path = get_cache_path()
+    cache_path = get_cache_path() / "materials.db"
     with shelve.open(str(cache_path.stem)) as fid:
         fid["materials"] = materials
         fid["elements"] = elements
     
     return materials, elements
+
+def download_xsdata():
+    """Download the xsdata.npy file from GitHub and save it to the package directory."""
+    url = 'https://github.com/lanl/trinidi-data/blob/main/xsdata.npy?raw=true'
+
+    cache_path = get_cache_path() / "xsdata.npy"
+
+    # Create the folder if it doesn't exist
+    if not os.path.exists(cache_path.parent):
+        os.makedirs(cache_path.parent)
+
+    # Download with progress bar
+    response = requests.get(url, stream=True)
+    if response.status_code == 200:
+        total_size = int(response.headers.get('content-length', 0))
+        with open(str(cache_path), 'wb') as f, tqdm(
+            desc=f"Downloading {cache_path}",
+            total=total_size,
+            unit='B',
+            unit_scale=True,
+            unit_divisor=1024,
+            ncols=80
+        ) as bar:
+            for data in response.iter_content(chunk_size=1024):
+                f.write(data)
+                bar.update(len(data))
+        print(f"File downloaded and saved to {cache_path}")
+    else:
+        raise Exception(f"Failed to download the file. Status code: {response.status_code}")

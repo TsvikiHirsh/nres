@@ -15,4 +15,4 @@ from nres.response import Response
 from nres.models import TransmissionModel
 import nres.utils as utils
 
-materials, elements = utils.load_or_create_cache()
+materials, elements = utils.load_or_create_materials_cache()
