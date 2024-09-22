@@ -9,8 +9,9 @@ from scipy.interpolate import UnivariateSpline
 from scipy.integrate import quad
 import warnings
 from nres._integrate_xs import integrate_cross_section
+from copy import copy
 
-def from_material(mat, short_name: str = ""):
+def from_material(mat, short_name: str = "", break_isotopes: bool = False):
     xs_elements = {}
     for element in mat["elements"]:
         xs = CrossSection(mat["elements"][element]["isotopes"],name=element)
@@ -19,6 +20,7 @@ def from_material(mat, short_name: str = ""):
     xs = CrossSection(xs_elements,name=short_name)
     xs.n = mat["n"]
     return xs
+
 
 
 class CrossSection:
@@ -53,6 +55,7 @@ class CrossSection:
 
     def __init__(self, isotopes: dict = {}, 
                  name: str = "", 
+                 total_weight: float = 1.,
                  L: float = 10.59,
                  tstep: float = 1.56255e-9,
                  tbins: int = 640,
@@ -76,14 +79,21 @@ class CrossSection:
             The index of the first time bin.
         """
         self.isotopes = isotopes
-        self.weights = np.array(list(self.isotopes.values()), float)
-        self.weights = self.weights[self.weights>0] # remove weight=0 isotopes
-        self.weights /= self.weights.sum()  # Normalize weights
+        
+        # names = []
+        # for isotope in self.isotopes:
+        #     if isinstance(isotope, CrossSection):
+        #         names.append(isotope.name)
+        #     else:
+        #         names.append(isotope)
+
         self.L = L
         self.name = name
         self.ufuncs = []
+        self.total_weight = total_weight
 
         # Define the filename and location in site-packages
+        cache_path = utils.get_cache_path() / "xsdata.npy"
         self.file_name = 'xsdata.npy'
         self.package_dir = os.path.join(site.getsitepackages()[0], 'cross_section_data')
         self.file_path = os.path.join(self.package_dir, self.file_name)
@@ -99,6 +109,7 @@ class CrossSection:
 
         # Populate cross-section data for isotopes
         self._populate_isotope_data()
+        self._set_weights()
 
 
     def _load_xsdata(self):
@@ -133,10 +144,10 @@ class CrossSection:
                 updated_isotopes[isotope.name] = weight
                 self.n+=isotope.n*weight
                 isotope = isotope.name
-        
+
         self.isotopes = updated_isotopes
         table = pd.DataFrame(xs).interpolate()
-        table["total"] = (table * self.weights).sum(axis=1)
+        # table["total"] = (table * self.weights).sum(axis=1)
         table.index.name = "energy"
         self.table = table
 
@@ -144,23 +155,67 @@ class CrossSection:
         self.total = self.table["total"].loc[emin:emax].fillna(0.).values
         self.egrid = self.table["total"].loc[emin:emax].fillna(0.).index.values
 
-    def set_weights(self,weights):
-        self.total = self.table.drop(["total"],axis=1).mul(weights, axis=1).sum(axis=1).fillna(0.)
+    def _set_weights(self,weights=[]):
+        self.weights = pd.Series(self.isotopes)
+        if len(weights):
+            self.weights.values = weights
+        self.weights = self.weights[self.weights>0] # remove weight=0 isotopes
+        self.weights /= self.weights.sum()  # Normalize weights
+        self.table["total"] =  (self.table * self.weights).sum(axis=1)
+        # self.total = self.table.drop(["total"],axis=1).mul(weights, axis=1).sum(axis=1).fillna(0.)
+        # self.egrid = self.total.index.values
+        # self.total = self.total.values
 
-    def set_response(self, kind="gauss_norm", **kwargs):
-        """
-        Set the response function for the cross-section and apply it to the total cross-section.
+    def __add__(self,other):
+        """Add a cross section object
 
-        Parameters:
-        ----------
-        kind : str
-            Type of response function to use.
-        kwargs : dict
-            Additional parameters for the response function.
+        Args:
+            other (CrossSection object): Another CrossSection Object to add to the current one
         """
-        self.response = Response(kind=kind, L=self.L,tbin=self.tstep,nbins=self.nbins)
-        tof = utils.energy2time(self.table.index.values, self.L)
-        self.table["response_total"] = convolve(self.table["total"], self.response(tof, **kwargs), "same")
+        self.weights = self.weights.mul(self.total_weight).add(other.weights.mul(other.total_weight), fill_value=0.)
+        self.weights /= self.weights.sum()
+        self.isotopes = self.weights.to_dict()
+        total_weight = self.total_weight + other.total_weight
+        self.total_weight/=total_weight
+        other.total_weight/=total_weight
+
+        # Combine energy grids
+        all_energies = self.table.index.union(other.table.index)
+
+        # Interpolate both tables to the combined energy grid
+        self_interpolated = self.table.reindex(all_energies).interpolate(method='index').drop(columns='total')
+        other_interpolated = other.table.reindex(all_energies).interpolate(method='index').drop(columns='total')
+
+        # Add the weighted tables
+        combined_weights = (self.weights * self.total_weight).add(
+            other.weights * other.total_weight, fill_value=0
+        )
+        combined_weights /= combined_weights.sum()
+
+        interpolated = pd.concat([
+            self_interpolated,
+            other_interpolated
+        ], keys=['self', 'other'],axis=1)
+
+        new_self = copy(self)
+        # Calculate new cross-sections
+        new_self.table = (
+            interpolated.mul(pd.concat([self.weights, other.weights], keys=['self', 'other']))
+            .stack(0).groupby(level=0).sum()
+        )
+
+        new_self.weights = combined_weights
+
+        new_self.table["total"] = (new_self.table * new_self.weights).sum(axis=1)
+        new_self.n = self.total_weight*self.n + other.total_weight*other.n
+
+        return new_self
+    
+    def __mul__(self,total_weight=1.):
+        new_self = copy(self)
+        new_self.total_weight = total_weight
+        return new_self
+
 
     def __call__(self, E, weights = None,response=[0.,1.,0.]):
         """
@@ -179,7 +234,7 @@ class CrossSection:
         if weights==None or weights==[]:
             pass
         else:
-            self.set_weights(weights=weights)
+            self._set_weights(weights=weights)
         response = response if len(response) else [0.]
         return np.array(integrate_cross_section(self.total.index.values, self.total.values, E, response, self.L))
 
