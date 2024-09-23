@@ -96,13 +96,28 @@ class CrossSection:
         self.table.index.name = "energy"
 
     def _set_weights(self, weights: List[float] = None):
-        """Set and normalize the weights for the isotopes."""
-        self.weights = pd.Series(self.isotopes)
-        if weights:
-            self.weights.values = weights
-        self.weights = self.weights[self.weights > 0]  # remove weight=0 isotopes
-        self.weights /= self.weights.sum()  # Normalize weights
-        self.table["total"] = (self.table * self.weights).sum(axis=1)
+        """
+        Set and normalize the weights for the isotopes.
+
+        Args:
+            weights: Optional list of new weights. If provided, must match the number of isotopes.
+        """
+        if weights is not None:
+            if len(weights) != len(self.isotopes):
+                raise ValueError("Number of weights must match number of isotopes")
+            self.weights = pd.Series(weights, index=self.isotopes.keys())
+        else:
+            self.weights = pd.Series(self.isotopes)
+
+        # Remove isotopes with zero weight
+        self.weights = self.weights[self.weights > 0]
+
+        # Normalize weights
+        self.weights /= self.weights.sum()
+
+        # Update the total cross-section
+        self.table["total"] = (self.table.drop(columns="total", errors="ignore") * self.weights).sum(axis=1)
+
 
     def _set_energy_range(self, emin: float = 0.5e6, emax: float = 2.0e7):
         """Set the energy range for the cross-section data."""
@@ -176,8 +191,9 @@ class CrossSection:
 
         if weights is not None:
             self._set_weights(weights=weights)
-        response = response or [1.]
-        return np.array(integrate_cross_section(self.total.index.values, self.total.values, E, response, self.L))
+        if response is None:
+            response = [1.]
+        return np.array(integrate_cross_section(self.table["total"].index.values, self.table["total"].values, E, response, self.L))
 
     def plot(self, **kwargs):
         """
@@ -185,9 +201,6 @@ class CrossSection:
 
         Args:
             **kwargs: Optional plotting parameters.
-
-        Returns:
-            matplotlib.axes.Axes: The plot axes.
         """
         import matplotlib.pyplot as plt
 
@@ -200,57 +213,49 @@ class CrossSection:
         table.columns = [f"{column}: {weight*100:>6.2f}%" for column, weight in self.weights.items()] + ["total"]
         
         fig, ax = plt.subplots()
+        table.plot(y="total", lw=1.5, ax=ax, color="0.2", zorder=100,**kwargs)
         table.drop("total", axis=1).plot(ax=ax, title=title, xlabel=xlabel, ylabel=ylabel, lw=lw, **kwargs)
-        table.plot(y="total", lw=1.5, ax=ax, color="0.2")
-        
-        return ax
+        # return ax
     
     @classmethod
-    def from_material(cls, mat: Union[str, Dict], short_name: str = "", total_weight: float = 1.) -> 'CrossSection':
+    def from_material(cls, mat: Union[str, Dict], short_name: str = "", 
+                      total_weight: float = 1., isotopic:bool =False) -> 'CrossSection':
         """
         Create a CrossSection instance from a material.
 
         Args:
-            mat: Material name or dictionary containing material information.
+            mat: Material or Element name/formula or dictionary containing material information.
             short_name: Short name for the material (optional).
             total_weight: Total weight of the material (default is 1.0).
+            isotopic: If True keep the indevidual cross sections of the different isotopes
 
         Returns:
             CrossSection instance representing the material.
         """
         if isinstance(mat, str):
             formulas = {nres.materials[element]["formula"]: nres.materials[element]["name"] for element in nres.materials}
-            mat = nres.materials[formulas.get(mat, mat)]
-
-        xs_elements = {}
-        for element, data in mat["elements"].items():
-            xs = cls(data["isotopes"], name=element)
-            xs_elements[xs] = data["weight"]
-
+            try: # try finding the material name in the materials database
+                mat = nres.materials[formulas.get(mat, mat)]
+            except KeyError: # otherwise try the elements database
+                formulas = {nres.elements[element]["formula"]: nres.elements[element]["name"] for element in nres.elements}
+                mat = nres.elements[formulas.get(mat.capitalize(), mat.capitalize())]
+        
         short_name = short_name or mat["name"]
-        xs = cls(xs_elements, name=short_name, total_weight=total_weight)
-        xs.n = mat["n"]
-        return xs
 
-    @classmethod
-    def from_element(cls, mat: Union[str, Dict], short_name: str = "", total_weight: float = 1.) -> 'CrossSection':
-        """
-        Create a CrossSection instance from an element.
+        if isotopic:
+            for i, (element, data) in enumerate(mat["elements"].items()):
+                if i==0:
+                    xs = cls(mat["elements"][element]["isotopes"], name=element, total_weight=data["weight"])
+                else:
+                    xs += cls(mat["elements"][element]["isotopes"], name=element, total_weight=data["weight"])
+            xs.name = short_name
+        else:
+                    
+            xs_elements = {}
+            for element, data in mat["elements"].items():
+                xs = cls(data["isotopes"], name=element)
+                xs_elements[xs] = data["weight"]
+            xs = cls(xs_elements, name=short_name, total_weight=total_weight)
 
-        Args:
-            mat: Element name or dictionary containing element information.
-            short_name: Short name for the element (optional).
-            total_weight: Total weight of the element (default is 1.0).
-
-        Returns:
-            CrossSection instance representing the element.
-        """
-        if isinstance(mat, str):
-            formulas = {nres.elements[element]["formula"]: nres.elements[element]["name"] for element in nres.elements}
-            mat = nres.elements[formulas.get(mat, mat)]
-
-        element = list(mat["elements"].keys())[0]
-        short_name = short_name or mat["name"]
-        xs = cls(mat["elements"][element]["isotopes"], name=short_name, total_weight=total_weight)
         xs.n = mat["n"]
         return xs
