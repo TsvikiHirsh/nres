@@ -179,13 +179,6 @@ class CrossSection:
         Args:
             other (CrossSection object): Another CrossSection Object to add to the current one
         """
-        self.weights = self.weights.mul(self.total_weight).add(other.weights.mul(other.total_weight), fill_value=0.)
-        self.weights /= self.weights.sum()
-        self.isotopes = self.weights.to_dict()
-        total_weight = self.total_weight + other.total_weight
-        self.total_weight/=total_weight
-        other.total_weight/=total_weight
-
         # Combine energy grids
         all_energies = self.table.index.union(other.table.index)
 
@@ -212,6 +205,7 @@ class CrossSection:
         )
 
         new_self.weights = combined_weights
+        new_self.total_weight = 1.
 
         new_self.table["total"] = (new_self.table * new_self.weights).sum(axis=1)
         new_self.n = self.total_weight*self.n + other.total_weight*other.n
