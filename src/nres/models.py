@@ -5,6 +5,7 @@ from nres.response import Response
 from nres.data import Data
 import pandas
 import matplotlib.pyplot as plt
+from copy import copy
 
 
 class TransmissionModel(lmfit.Model):
@@ -124,6 +125,8 @@ class TransmissionModel(lmfit.Model):
             # Perform the fit using the parent class's fit method
             fit_result = super().fit(data, params=params or self.params, **kwargs)
         self.fit_result = fit_result
+        # switch method names
+        fit_result.plot_results = copy(fit_result.plot)
         fit_result.plot = self.plot
 
         # return TransmissionModelResult(fit_result, params or self.params)
