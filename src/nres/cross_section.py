@@ -219,7 +219,7 @@ class CrossSection:
     
     @classmethod
     def from_material(cls, mat: Union[str, Dict], short_name: str = "", 
-                      total_weight: float = 1., isotopic:bool =False) -> 'CrossSection':
+                      total_weight: float = 1., splitby:str ="elements") -> 'CrossSection':
         """
         Create a CrossSection instance from a material.
 
@@ -227,7 +227,7 @@ class CrossSection:
             mat: Material or Element name/formula or dictionary containing material information.
             short_name: Short name for the material (optional).
             total_weight: Total weight of the material (default is 1.0).
-            isotopic: If True keep the indevidual cross sections of the different isotopes
+            splitby: split the cross section for "elements", "isotopes" or "materials" contributions
 
         Returns:
             CrossSection instance representing the material.
@@ -242,14 +242,14 @@ class CrossSection:
         
         short_name = short_name or mat["name"]
 
-        if isotopic:
+        if splitby=="isotopes":
             for i, (element, data) in enumerate(mat["elements"].items()):
                 if i==0:
                     xs = cls(mat["elements"][element]["isotopes"], name=element, total_weight=data["weight"])
                 else:
                     xs += cls(mat["elements"][element]["isotopes"], name=element, total_weight=data["weight"])
             xs.name = short_name
-        else:
+        elif splitby=="elements":
                     
             xs_elements = {}
             for element, data in mat["elements"].items():
@@ -257,5 +257,54 @@ class CrossSection:
                 xs_elements[xs] = data["weight"]
             xs = cls(xs_elements, name=short_name, total_weight=total_weight)
 
+        elif splitby=="materials":
+
+            xs_elements = {}
+            for element, data in mat["elements"].items():
+                xs = cls(data["isotopes"], name=element)
+                xs_elements[xs] = data["weight"]
+            xs = cls(xs_elements, name=short_name, total_weight=total_weight).group(name=short_name)
+
+        else:
+            raise ValueError("you can splitby 'isotopes','elements' or 'materials'")
+            
         xs.n = mat["n"]
         return xs
+    
+    def group(self,name:str):
+        # group the CrossSection objects under the same name
+        new_self = copy(self)
+        new_self.table[name] = new_self.table["total"]
+        new_self.table = new_self.table[[name,"total"]]
+        new_self.weights = pd.Series([1.],index=[name])
+        return new_self
+    
+    def _is_isotope(self,isotope:str):
+        # checks if a key is an isotope name:
+        return True if isotope in self.__xsdata__ else False
+    
+    def groupby_isotopes(self):
+        # groupby isotopes
+        new_weights = {}
+        new_table = {}
+        new_self = copy(self)
+        for isotope,weight in new_self.weights.items():
+            if self._is_isotope(isotope):
+                element,mass = isotope.split("-")
+                if element in new_weights:
+                    new_weights[element] += weight
+                    new_table[element]+=weight*new_self.table[isotope]
+                else:
+                    new_weights[element] = weight
+                    new_table[element]=weight*new_self.table[isotope]
+            else:
+                new_weights[isotope] = weight
+                new_table[isotope]=weight*new_self.table[isotope]
+
+        new_self.table = pd.DataFrame(new_table)
+        
+        new_self.weights = pd.Series(new_weights)
+        new_self.table["total"] = (new_self.table*new_self.weights).sum(1)
+        return new_self
+
+        
