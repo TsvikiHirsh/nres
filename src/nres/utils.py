@@ -102,7 +102,7 @@ def load_or_create_materials_cache():
     cache_path = get_cache_path() / "materials.db"
     
     if cache_path.exists():
-        with shelve.open(str(cache_path.stem)) as fid:
+        with shelve.open(str(cache_path.with_suffix(""))) as fid:
             materials = fid.get("materials")
             elements = fid.get("elements")
         
@@ -118,8 +118,8 @@ def create_and_save_materials_cache():
     materials = materials_dict()
     elements = elements_dict()
     
-    cache_path = get_cache_path() / "materials.db"
-    with shelve.open(str(cache_path.stem)) as fid:
+    cache_path = get_cache_path() / "materials"
+    with shelve.open(str(cache_path)) as fid:
         fid["materials"] = materials
         fid["elements"] = elements
     
