@@ -77,7 +77,7 @@ std::vector<double> convolve_with_kernel(const std::vector<double>& values, cons
     }
     return result;
 }
-// Updated trapezoidal integration of cross sections with extended grid
+
 std::vector<double> integrate_cross_section(
     const std::vector<double>& xs_energies,      // Energy grid of cross-section data
     const std::vector<double>& xs_values,        // Cross-section values corresponding to xs_energies
@@ -147,8 +147,8 @@ std::vector<double> integrate_cross_section(
         integrated_values.push_back(avg_xs);
     }
 
-    // If a kernel is provided, convolve the result
-    if (!kernel.empty()) {
+    // If a kernel is provided and its size is greater than 1, convolve the result
+    if (kernel.size() > 1) {
         integrated_values = convolve_with_kernel(integrated_values, kernel);
     }
 
@@ -157,6 +157,10 @@ std::vector<double> integrate_cross_section(
         integrated_values.erase(integrated_values.begin(), integrated_values.begin() + num_bins_to_add - 1);
         integrated_values.erase(integrated_values.end() - num_bins_to_add, integrated_values.end());
     }
+
+    // Replace NaN values with zero
+    std::replace_if(integrated_values.begin(), integrated_values.end(), 
+                    [](double val) { return std::isnan(val); }, 0.0);
 
     return integrated_values;
 }
