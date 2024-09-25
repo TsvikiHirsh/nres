@@ -2,10 +2,10 @@ import os
 import pandas as pd
 import numpy as np
 import nres.utils as utils
-from typing import Dict, Union, List
-from copy import copy
+from typing import Dict, Union, List, Optional
+from copy import deepcopy
 import nres
-
+from nres._integrate_xs import integrate_cross_section
 
 class CrossSection:
     """
@@ -95,7 +95,7 @@ class CrossSection:
         self.table = pd.DataFrame(xs).interpolate()
         self.table.index.name = "energy"
 
-    def _set_weights(self, weights: List[float] = None):
+    def _set_weights(self, weights: Optional[List[float]] = None):
         """
         Set and normalize the weights for the isotopes.
 
@@ -117,7 +117,6 @@ class CrossSection:
 
         # Update the total cross-section
         self.table["total"] = (self.table.drop(columns="total", errors="ignore") * self.weights).sum(axis=1)
-
 
     def _set_energy_range(self, emin: float = 0.5e6, emax: float = 2.0e7):
         """Set the energy range for the cross-section data."""
@@ -148,7 +147,7 @@ class CrossSection:
             other_interpolated
         ], keys=['self', 'other'], axis=1)
 
-        new_self = copy(self)
+        new_self = deepcopy(self)
         new_self.table = (
             interpolated.mul(pd.concat([self.weights, other.weights], keys=['self', 'other']))
             .stack(0).groupby(level=0).sum()
@@ -171,11 +170,11 @@ class CrossSection:
         Returns:
             A new CrossSection object with updated total_weight.
         """
-        new_self = copy(self)
+        new_self = deepcopy(self)
         new_self.total_weight = total_weight
         return new_self
 
-    def __call__(self, E: np.ndarray, weights: np.ndarray = None, response: np.ndarray = None) -> np.ndarray:
+    def __call__(self, E: np.ndarray, weights: Optional[np.ndarray] = None, response: Optional[np.ndarray] = None) -> np.ndarray:
         """
         Calculate the weighted cross-section for a given set of energies.
 
@@ -187,8 +186,6 @@ class CrossSection:
         Returns:
             Array of weighted cross-section values.
         """
-        from nres._integrate_xs import integrate_cross_section
-
         if weights is not None:
             self._set_weights(weights=weights)
         if response is None:
@@ -204,22 +201,22 @@ class CrossSection:
         """
         import matplotlib.pyplot as plt
 
-        title = kwargs.get("title", self.name)
-        ylabel = kwargs.get("ylabel", "$\sigma$ [barn]")
-        xlabel = kwargs.get("xlabel", "Energy [eV]")
-        lw = kwargs.get("lw", 1.)
+        title = kwargs.pop("title", self.name)
+        ylabel = kwargs.pop("ylabel", "$\sigma$ [barn]")
+        xlabel = kwargs.pop("xlabel", "Energy [eV]")
+        lw = kwargs.pop("lw", 1.)
 
         table = self.table.mul(np.r_[self.weights, 1.], axis=1)
         table.columns = [f"{column}: {weight*100:>6.2f}%" for column, weight in self.weights.items()] + ["total"]
         
         fig, ax = plt.subplots()
-        table.plot(y="total", lw=1.5, ax=ax, color="0.2", zorder=100,**kwargs)
+        table.plot(y="total", lw=1.5, ax=ax, color="0.2", zorder=100, **kwargs)
         table.drop("total", axis=1).plot(ax=ax, title=title, xlabel=xlabel, ylabel=ylabel, lw=lw, **kwargs)
-        # return ax
+        return ax
     
     @classmethod
     def from_material(cls, mat: Union[str, Dict], short_name: str = "", 
-                      total_weight: float = 1., splitby:str ="elements") -> 'CrossSection':
+                      total_weight: float = 1., splitby: str = "elements") -> 'CrossSection':
         """
         Create a CrossSection instance from a material.
 
@@ -242,69 +239,55 @@ class CrossSection:
         
         short_name = short_name or mat["name"]
 
-        if splitby=="isotopes":
-            for i, (element, data) in enumerate(mat["elements"].items()):
-                if i==0:
-                    xs = cls(mat["elements"][element]["isotopes"], name=element, total_weight=data["weight"])
-                else:
-                    xs += cls(mat["elements"][element]["isotopes"], name=element, total_weight=data["weight"])
+        if splitby == "isotopes":
+            xs = sum((cls(mat["elements"][element]["isotopes"], name=element, total_weight=data["weight"])
+                      for element, data in mat["elements"].items()), start=cls())
             xs.name = short_name
-        elif splitby=="elements":
-                    
-            xs_elements = {}
-            for element, data in mat["elements"].items():
-                xs = cls(data["isotopes"], name=element)
-                xs_elements[xs] = data["weight"]
+        elif splitby == "elements":
+            xs_elements = {cls(data["isotopes"], name=element): data["weight"]
+                           for element, data in mat["elements"].items()}
             xs = cls(xs_elements, name=short_name, total_weight=total_weight)
-
-        elif splitby=="materials":
-
-            xs_elements = {}
-            for element, data in mat["elements"].items():
-                xs = cls(data["isotopes"], name=element)
-                xs_elements[xs] = data["weight"]
+        elif splitby == "materials":
+            xs_elements = {cls(data["isotopes"], name=element): data["weight"]
+                           for element, data in mat["elements"].items()}
             xs = cls(xs_elements, name=short_name, total_weight=total_weight).group(name=short_name)
-
         else:
-            raise ValueError("you can splitby 'isotopes','elements' or 'materials'")
+            raise ValueError("splitby must be 'isotopes', 'elements', or 'materials'")
             
         xs.n = mat["n"]
         return xs
     
-    def group(self,name:str):
-        # group the CrossSection objects under the same name
-        new_self = copy(self)
+    def group(self, name: str) -> 'CrossSection':
+        """Group the CrossSection objects under the same name."""
+        new_self = deepcopy(self)
         new_self.table[name] = new_self.table["total"]
-        new_self.table = new_self.table[[name,"total"]]
-        new_self.weights = pd.Series([1.],index=[name])
+        new_self.table = new_self.table[[name, "total"]]
+        new_self.weights = pd.Series([1.], index=[name])
         return new_self
     
-    def _is_isotope(self,isotope:str):
-        # checks if a key is an isotope name:
-        return True if isotope in self.__xsdata__ else False
+    def _is_isotope(self, isotope: str) -> bool:
+        """Check if a key is an isotope name."""
+        return isotope in self.__xsdata__
     
-    def groupby_isotopes(self):
-        # groupby isotopes
+    def groupby_isotopes(self) -> 'CrossSection':
+        """Group by isotopes."""
         new_weights = {}
         new_table = {}
-        new_self = copy(self)
-        for isotope,weight in new_self.weights.items():
+        new_self = deepcopy(self)
+        for isotope, weight in new_self.weights.items():
             if self._is_isotope(isotope):
-                element,mass = isotope.split("-")
+                element, mass = isotope.split("-")
                 if element in new_weights:
                     new_weights[element] += weight
-                    new_table[element]+=weight*new_self.table[isotope]
+                    new_table[element] += weight * new_self.table[isotope]
                 else:
                     new_weights[element] = weight
-                    new_table[element]=weight*new_self.table[isotope]
+                    new_table[element] = weight * new_self.table[isotope]
             else:
                 new_weights[isotope] = weight
-                new_table[isotope]=weight*new_self.table[isotope]
+                new_table[isotope] = weight * new_self.table[isotope]
 
         new_self.table = pd.DataFrame(new_table)
-        
         new_self.weights = pd.Series(new_weights)
-        new_self.table["total"] = (new_self.table*new_self.weights).sum(1)
+        new_self.table["total"] = (new_self.table * new_self.weights).sum(1)
         return new_self
-
-        
