@@ -53,6 +53,7 @@ class CrossSection:
         self.tstep = tstep
         self.tbins = tbins
         self.first_tbin = first_tbin
+        self.tgrid = np.arange(self.first_tbin,self.tbins+1,1)*self.tstep
 
         self.__xsdata__ = None
         self._load_xsdata()
@@ -122,6 +123,7 @@ class CrossSection:
         """Set the energy range for the cross-section data."""
         self.total = self.table["total"].loc[emin:emax].fillna(0.).values
         self.egrid = self.table["total"].loc[emin:emax].fillna(0.).index.values
+        self.tgrid = utils.time2energy(self.egrid,self.L)
 
     def __add__(self, other: 'CrossSection') -> 'CrossSection':
         """
