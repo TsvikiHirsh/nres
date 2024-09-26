@@ -5,7 +5,7 @@ from nres.response import Response, Background
 from nres.data import Data
 import pandas
 import matplotlib.pyplot as plt
-from copy import copy
+from copy import deepcopy
 
 
 class TransmissionModel(lmfit.Model):
@@ -122,7 +122,7 @@ class TransmissionModel(lmfit.Model):
             fit_result = super().fit(data, params=params or self.params, **kwargs)
         self.fit_result = fit_result
         # switch method names
-        fit_result.plot_results = copy(fit_result.plot)
+        fit_result.plot_results = deepcopy(fit_result.plot)
         fit_result.plot = self.plot
 
         # return TransmissionModelResult(fit_result, params or self.params)
@@ -170,7 +170,7 @@ class TransmissionModel(lmfit.Model):
             Parameters: An lmfit Parameters object with weights normalized to sum to 1.
         """
         params = lmfit.Parameters()
-        weight_series = copy(self.cross_section.weights)
+        weight_series = deepcopy(self.cross_section.weights)
         param_names = weight_series.index
         N = len(weight_series)
         # Normalize the input weights to sum to 1 (in case they're not perfectly normalized)
@@ -185,7 +185,7 @@ class TransmissionModel(lmfit.Model):
             # Add (N-1) free parameters corresponding to the first (N-1) items
             for i, name in enumerate(param_names[:-1]):
                 initial_value = normalized_weights[name] / last_weight
-                params.add(f'p{i+1}', value=initial_value, min=0,max=1,vary=vary)
+                params.add(f'p{i+1}', value=initial_value,min=0,vary=vary)
             
             # Define the normalization expression
             normalization_expr = ' + '.join([f'p{i+1}' for i in range(N-1)]) + ' + 1'
