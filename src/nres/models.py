@@ -1,7 +1,7 @@
 import lmfit
 import numpy as np
 import nres.utils as utils
-from nres.response import Response
+from nres.response import Response, Background
 from nres.data import Data
 import pandas
 import matplotlib.pyplot as plt
@@ -10,10 +10,13 @@ from copy import copy
 
 class TransmissionModel(lmfit.Model):
     def __init__(self, cross_section, 
-                 vary_weights=False, 
-                 vary_background=False, 
-                 vary_tof=False,
-                 **kwargs):
+                        response:str = "expo_gauss",
+                        background:str = "polynomial3",
+                        vary_weights:bool=False, 
+                        vary_background:bool=False, 
+                        vary_tof:bool=False,
+                        vary_response:bool=False,
+                        **kwargs):
         """
         Initialize the TransmissionModel, a subclass of lmfit.Model.
 
@@ -30,35 +33,34 @@ class TransmissionModel(lmfit.Model):
             Additional keyword arguments for background parameters, such as `b0`, `b1`, and `b2`.
         """
         super().__init__(self.transmission, **kwargs)
+
         self.cross_section = cross_section
-        
+
         self.params = self.make_params()
-        for isotope in self.cross_section.isotopes:
-            self.params.add(isotope.replace("-", ""),
-                            value=self.cross_section.isotopes[isotope],
-                            min=0,
-                            max=1,
-                            vary=vary_weights)
+        if vary_weights:
+            self.params += self._make_weight_params(vary=vary_weights)
+        if vary_tof:
+            self.params += self._make_tof_params(vary=vary_tof,**kwargs)
 
-        # Initialize background parameters with provided values or defaults
-        bg_args = {"b0": kwargs.get("b0", 0.), "b1": kwargs.get("b1", 0.), "b2": kwargs.get("b2", 0.)}
-        for b in bg_args:
-            self.params.add(b, value=bg_args[b], vary=vary_background)
 
-        # Initialize tof parameters with provided values or defaults
-        tof_args = {"L0": kwargs.get("L0", 1.), "t0": kwargs.get("t0", 0.)}
-        self.params.add("L0", value=tof_args["L0"], min=0.5, max= 1.5, vary=vary_tof)
-        self.params.add("t0", value=tof_args["t0"], min=-5.0e-9, max= 5.0e-9, vary=vary_tof)
+        self.response = Response(kind=response,vary=vary_response,
+                                 tstep=self.cross_section.tstep)
+        if vary_response:
+            self.params += self.response.params
 
-        # set the n parameter as fixed
-        if self.cross_section.n:
-            self.params.add("n", value=self.cross_section.n, vary=False)
-        else:
-            self.params.add("n", value=0.01, vary=False)
 
-        self.response = Response()
+        self.background = Background(kind=background,vary=vary_background)
+        if vary_background:
+            self.params += self.background.params
 
-    def transmission(self, E, thickness=1, n=0.01, norm=1., b0=0., b1=0., b2=0.,L0=1.,t0=0.,**response_kw):
+
+        # set the total atomic weight n [atoms/barn-cm]
+        self.n = self.cross_section.n if self.cross_section else 0.01
+
+
+        
+
+    def transmission(self, E: np.ndarray, thickness: float=1, norm:float=1.,**kwargs):
         """
         Transmission function model with background components.
 
@@ -67,32 +69,26 @@ class TransmissionModel(lmfit.Model):
             The energy values at which to calculate the transmission.
         - thickness: float, optional (default=1)
             The thickness of the material.
-        - n: float, optional (default=0.01)
-            The number density of the material. units [atoms/barn-cm]
         - norm: float, optional (default=1.)
-            Normalization factor for the transmission.
-        - b0: float, optional (default=0.)
-            Background parameter (constant term).
-        - b1: float, optional (default=0.)
-            Background parameter (linear term).
-        - b2: float, optional (default=0.)
-            Background parameter (quadratic term).
+
 
         Returns:
         - T: array-like
             The calculated transmission values.
         """
-        tof = utils.energy2time(E,self.cross_section.L)
-        dtof = (1.-L0)*tof + t0
-        E = utils.time2energy(tof+dtof,self.cross_section.L)
+        E = self._tof_correction(E,**kwargs)
 
-        # Background polynomial
-        bg = b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E)
-        
-        response = self.response.function(**response_kw)
-        weights = [response_kw.get(key,self.cross_section.isotopes[key]) for key in self.cross_section.isotopes]
+        response = self.response.function(**kwargs)
+
+        weights = [kwargs.pop(key,val) for key,val in self.cross_section.weights.items()]
+
+        bg = self.background.function(E,**kwargs)
+
+        n = self.n
+
         # Transmission function
         xs = self.cross_section(E,weights=weights,response=response)
+
         T = norm * np.exp(- xs * thickness * n) * (1 - bg) + bg
         return T
 
@@ -153,4 +149,59 @@ class TransmissionModel(lmfit.Model):
         ax[0].legend(["Best fit","Data"],title=f"χ$^2$: {self.fit_result.redchi:.2f}")
         return ax
     
+    def _make_tof_params(self,vary:bool=False,t0:float=0.,L0:float=1.):
+        """
+        Creates lmfit parameters for tof calibration with scale of the flight path distance L0 and time delay t0
+        
+        Returns:
+            Parameters: An lmfit Parameters object
+        """
+        params = lmfit.Parameters()
+        params.add("L0", value=L0, min=0.5, max= 1.5, vary=vary)
+        params.add("t0", value=t0, vary=vary)
+        return params
+
+    
+    def _make_weight_params(self,vary:bool=False):
+        """
+        Creates lmfit parameters based on a pandas.Series of initial weights, ensuring the sum of weights is 1.
+        
+        Returns:
+            Parameters: An lmfit Parameters object with weights normalized to sum to 1.
+        """
+        params = lmfit.Parameters()
+        weight_series = copy(self.cross_section.weights)
+        param_names = weight_series.index
+        N = len(weight_series)
+        # Normalize the input weights to sum to 1 (in case they're not perfectly normalized)
+        normalized_weights = weight_series / weight_series.sum()
+        
+        if N == 1:
+            # Special case: if N=1, the weight is always 1
+            params.add(f'{param_names[0]}', value=1., vary=False)
+        else:
+            last_weight = normalized_weights.iloc[-1]
+            
+            # Add (N-1) free parameters corresponding to the first (N-1) items
+            for i, name in enumerate(param_names[:-1]):
+                initial_value = normalized_weights[name] / last_weight
+                params.add(f'p{i+1}', value=initial_value, min=0,max=1,vary=vary)
+            
+            # Define the normalization expression
+            normalization_expr = ' + '.join([f'p{i+1}' for i in range(N-1)]) + ' + 1'
+            
+            # Add weights based on the free parameters
+            for i, name in enumerate(param_names[:-1]):
+                params.add(f'{name}', expr=f'p{i+1} / ({normalization_expr})')
+            
+            # The last weight is 1 minus the sum of the previous weights
+            params.add(f'{param_names[-1]}', expr=f'1 / ({normalization_expr})')
+        
+        return params
+    
+    def _tof_correction(self,E,L0:float=1.,t0:float=0.,**kwargs):
+        tof = utils.energy2time(E,self.cross_section.L)
+        dtof = (1.-L0)*tof + t0
+        E = utils.time2energy(tof+dtof,self.cross_section.L)
+        return E
 
