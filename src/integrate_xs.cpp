@@ -1,6 +1,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <numeric>
 
 // Constants
 const double SPEED_OF_LIGHT = 299792458;  // m/s
@@ -9,7 +10,7 @@ const double MASS_OF_NEUTRON = 939.56542052 * 1e6 / (SPEED_OF_LIGHT * SPEED_OF_L
 // Linear interpolation function
 double linear_interp(const std::vector<double>& xs_energies, const std::vector<double>& xs_values, double energy) {
     size_t n = xs_energies.size();
-
+    
     // If the energy is out of bounds, return 0 (or handle as needed)
     if (energy <= xs_energies.front()) return xs_values.front();
     if (energy >= xs_energies.back()) return xs_values.back();
@@ -21,7 +22,7 @@ double linear_interp(const std::vector<double>& xs_energies, const std::vector<d
             return xs_values[i] + slope * (energy - xs_energies[i]);
         }
     }
-
+    
     return 0.0; // Default return in case of error
 }
 
@@ -59,44 +60,57 @@ double energy2time(double energy, double flight_path_length) {
     double v = SPEED_OF_LIGHT * std::sqrt(1.0 - 1.0 / (gamma * gamma));
     return flight_path_length / v;
 }
-
-// Perform convolution with kernel in the time domain
+// Convolve the values with the kernel and return the result with the same size as the input
 std::vector<double> convolve_with_kernel(const std::vector<double>& values, const std::vector<double>& kernel) {
-    std::vector<double> result(values.size(), 0.0);
-    int kernel_half_size = kernel.size() / 2;
+    int values_size = values.size();
+    int kernel_size = kernel.size();
+    int pad_size = kernel_size / 2; // Half of the kernel size for symmetric padding
 
-    for (size_t i = 0; i < values.size(); ++i) {
+    // Create a padded version of the input values
+    std::vector<double> padded_values(values_size + 2 * pad_size, 0.0);
+    
+    // Copy original values into the padded vector
+    std::copy(values.begin(), values.end(), padded_values.begin() + pad_size);
+
+    // Result vector will have the same size as the original values
+    std::vector<double> result(values_size, 0.0);
+
+    // Perform convolution
+    for (int i = 0; i < values_size; ++i) {
         double conv_sum = 0.0;
-        for (int j = -kernel_half_size; j <= kernel_half_size; ++j) {
-            int idx = i + j;
-            if (static_cast<size_t>(idx) >= 0 && idx < values.size()) {
-                conv_sum += values[idx] * kernel[kernel_half_size + j];
-            }
+        for (int j = 0; j < kernel_size; ++j) {
+            conv_sum += padded_values[i + j] * kernel[j];
         }
         result[i] = conv_sum;
     }
+
     return result;
 }
 
 std::vector<double> integrate_cross_section(
-    const std::vector<double>& xs_energies,      // Energy grid of cross-section data
-    const std::vector<double>& xs_values,        // Cross-section values corresponding to xs_energies
-    const std::vector<double>& energy_grid,      // User-defined energy grid for integration
-    const std::vector<double>& kernel,           // Optional kernel for convolution
-    double flight_path_length = 1.0)             // Flight path length (in meters), default is 1 meter
+    const std::vector<double>& xs_energies,
+    const std::vector<double>& xs_values,
+    const std::vector<double>& energy_grid,
+    const std::vector<double>& kernel,
+    double flight_path_length = 1.0)
 {
+    // Handle the case when xs_values has only one element
+    if (xs_values.size() == 1) {
+        return std::vector<double>(energy_grid.size(), xs_values[0]);
+    }
+
     // Calculate the number of bins to add based on the kernel length
-    int num_bins_to_add = kernel.empty() ? 0 : kernel.size() / 2;
+    int num_bins_to_add = kernel.empty() ? 0 : kernel.size() - 1;
 
     // Extend the energy grid
     std::vector<double> extended_energy_grid = energy_grid;
     for (int i = 0; i < num_bins_to_add; ++i) {
         // Add prefix bin
-        double new_prefix = energy_grid.front() * std::pow(energy_grid.front() / energy_grid[1], i + 1);
+        double new_prefix = extended_energy_grid.front() * std::pow(extended_energy_grid.front() / extended_energy_grid[1], 1);
         extended_energy_grid.insert(extended_energy_grid.begin(), new_prefix);
         
         // Add suffix bin
-        double new_suffix = energy_grid.back() * std::pow(energy_grid.back() / energy_grid[energy_grid.size() - 2], i + 1);
+        double new_suffix = extended_energy_grid.back() * std::pow(extended_energy_grid.back() / extended_energy_grid[extended_energy_grid.size() - 2], 1);
         extended_energy_grid.push_back(new_suffix);
     }
 
@@ -112,35 +126,9 @@ std::vector<double> integrate_cross_section(
             continue;
         }
 
-        // Create vectors to store energy points and cross-sections within the current bin
-        std::vector<double> energy_points;
-        std::vector<double> xs_points;
-
-        // Add the lower edge of the bin
-        energy_points.push_back(emin);
-        xs_points.push_back(linear_interp(xs_energies, xs_values, emin));
-
-        // Add points inside the bin (from xs_energies) if they lie between emin and emax
-        for (size_t j = 0; j < xs_energies.size(); ++j) {
-            if (xs_energies[j] > emin && xs_energies[j] < emax) {
-                energy_points.push_back(xs_energies[j]);
-                xs_points.push_back(xs_values[j]);
-            }
-        }
-
-        // Add the upper edge of the bin
-        energy_points.push_back(emax);
-        xs_points.push_back(linear_interp(xs_energies, xs_values, emax));
-
-        // Perform trapezoidal integration over the points in this bin
-        double integral = 0.0;
-        for (size_t j = 0; j < energy_points.size() - 1; ++j) {
-            double x1 = energy_points[j];
-            double x2 = energy_points[j + 1];
-            double y1 = xs_points[j];
-            double y2 = xs_points[j + 1];
-            integral += 0.5 * (y1 + y2) * (x2 - x1);
-        }
+        // Perform trapezoidal integration
+        double integral = 0.5 * (linear_interp(xs_energies, xs_values, emin) + 
+                                 linear_interp(xs_energies, xs_values, emax)) * (emax - emin);
 
         // Calculate the average cross-section for this bin
         double avg_xs = integral / (emax - emin);
@@ -153,9 +141,18 @@ std::vector<double> integrate_cross_section(
     }
 
     // Trim the result to match the original energy grid size
-    if (num_bins_to_add > 0) {
-        integrated_values.erase(integrated_values.begin(), integrated_values.begin() + num_bins_to_add - 1);
-        integrated_values.erase(integrated_values.end() - num_bins_to_add, integrated_values.end());
+    size_t expected_size = energy_grid.size();
+    if (integrated_values.size() > expected_size) {
+        size_t extra = integrated_values.size() - expected_size;
+        size_t to_remove_start = extra / 2;
+        size_t to_remove_end = extra - to_remove_start;
+        integrated_values.erase(integrated_values.begin(), integrated_values.begin() + to_remove_start);
+        integrated_values.erase(integrated_values.end() - to_remove_end, integrated_values.end());
+    }
+
+    // Ensure the result matches the original energy grid size
+    if (integrated_values.size() != expected_size) {
+        integrated_values.resize(expected_size, integrated_values.back());
     }
 
     // Replace NaN values with zero
