@@ -173,32 +173,33 @@ class TransmissionModel(lmfit.Model):
         weight_series = deepcopy(self.cross_section.weights)
         param_names = weight_series.index
         N = len(weight_series)
-        # Normalize the input weights to sum to 1 (in case they're not perfectly normalized)
-        normalized_weights = weight_series / weight_series.sum()
-        
+
+        # Normalize the input weights to sum to 1
+        weights = np.array(weight_series / weight_series.sum(), dtype=np.float64)
+
         if N == 1:
             # Special case: if N=1, the weight is always 1
             params.add(f'{param_names[0]}', value=1., vary=False)
         else:
-            last_weight = normalized_weights.iloc[-1]
-            
+
+            last_weight = weights[-1]
             # Add (N-1) free parameters corresponding to the first (N-1) items
             for i, name in enumerate(param_names[:-1]):
-                initial_value = normalized_weights[name] / last_weight
-                params.add(f'p{i+1}', value=initial_value,min=0,vary=vary)
+                initial_value = weights[i]  # Use weight values
+                params.add(f'p{i+1}',value=np.log(weights[i]/last_weight),brute_step=0.01,min=-14,max=14) # limit to 1ppm
             
             # Define the normalization expression
-            normalization_expr = ' + '.join([f'p{i+1}' for i in range(N-1)]) + ' + 1'
+            normalization_expr = ' + '.join([f'exp(p{i+1})' for i in range(N-1)])
             
             # Add weights based on the free parameters
             for i, name in enumerate(param_names[:-1]):
-                params.add(f'{name}', expr=f'p{i+1} / ({normalization_expr})')
+                params.add(f'{name}', expr=f'exp(p{i+1}) / (1 + {normalization_expr})')
             
             # The last weight is 1 minus the sum of the previous weights
-            params.add(f'{param_names[-1]}', expr=f'1 / ({normalization_expr})')
-        
+            params.add(f'{param_names[-1]}', expr=f'1 / (1 + {normalization_expr})')
+
         return params
-    
+        
     def _tof_correction(self,E,L0:float=1.,t0:float=0.,**kwargs):
         tof = utils.energy2time(E,self.cross_section.L)
         dtof = (1.-L0)*tof + t0
