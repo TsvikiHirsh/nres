@@ -48,30 +48,34 @@ Here's a quick example of how to use `nres`:
     # Plot fit results
     result.plot()
 
-.. image:: https://github.com/tsvikihirsh/nres/raw/main/docs/images/silicon_fit.png
+.. image:: https://github.com/TsvikiHirsh/nres/raw/master/docs/images/silicon_fit.png
    :alt: Fit results
    :align: center
    :width: 600px
 
-For more detailed examples and advanced usage, please refer to our Jupyter `notebook demo <nhttps://github.com/tsvikihirsh/nres/otebooks/nres_demo.ipynb>`_.
+For more detailed examples and advanced usage, please refer to our Jupyter `notebook demo <https://github.com/TsvikiHirsh/nres/blob/master/notebooks/nres_demo.ipynb>`_.
 
 Contributing
 ------------
-See `CONTRIBUTING.md <https://github.com/tsvikihirsh/nres/CONTRIBUTING.md>`_ for instructions on how to contribute.
+See `CONTRIBUTING.md <https://github.com/TsvikiHirsh/nres/blob/master/CONTRIBUTING.md>`_ for instructions on how to contribute.
 
 License
 -------
-Distributed under the terms of the `MIT license <https://github.com/tsvikihirsh/nres/LICENSE>`_.
+Distributed under the terms of the `MIT license <https://github.com/TsvikiHirsh/nres/blob/master/LICENSE.md>`_.
 
 Contact
 -------
-For questions, issues, or contributions, please visit the `GitHub repository <https://github.com/tsvikihirsh/nres>`_.
+For questions, issues, or contributions, please visit the `GitHub repository <https://github.com/TsvikiHirsh/nres>`_.
 
 .. toctree::
    :maxdepth: 3
    :caption: Contents:
 
    modules  # Add your modules.rst file here
+   cross_section
+   data
+   response
+   models
 
 Indices and tables
 ==================
