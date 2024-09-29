@@ -106,6 +106,7 @@ class CrossSection:
         if weights is not None:
             if len(weights) != len(self.isotopes):
                 raise ValueError("Number of weights must match number of isotopes")
+            
             self.weights = pd.Series(weights, index=self.isotopes.keys())
         else:
             self.weights = pd.Series(self.isotopes)
@@ -176,7 +177,8 @@ class CrossSection:
         new_self.total_weight = total_weight
         return new_self
 
-    def __call__(self, E: np.ndarray, weights: Optional[np.ndarray] = None, response: Optional[np.ndarray] = None) -> np.ndarray:
+    def __call__(self, E: np.ndarray, weights: Optional[np.ndarray] = None, 
+                 response: Optional[np.ndarray] = None) -> np.ndarray:
         """
         Calculate the weighted cross-section for a given set of energies.
 
@@ -244,15 +246,18 @@ class CrossSection:
         if splitby == "isotopes":
             xs = sum((cls(mat["elements"][element]["isotopes"], name=element, total_weight=data["weight"])
                       for element, data in mat["elements"].items()), start=cls())
+            xs.isotopes = xs.weights.to_dict()
             xs.name = short_name
         elif splitby == "elements":
             xs_elements = {cls(data["isotopes"], name=element): data["weight"]
                            for element, data in mat["elements"].items()}
             xs = cls(xs_elements, name=short_name, total_weight=total_weight)
+            xs.isotopes = xs.weights.to_dict()
         elif splitby == "materials":
             xs_elements = {cls(data["isotopes"], name=element): data["weight"]
                            for element, data in mat["elements"].items()}
             xs = cls(xs_elements, name=short_name, total_weight=total_weight).group(name=short_name)
+            xs.isotopes = xs.weights.to_dict()
         else:
             raise ValueError("splitby must be 'isotopes', 'elements', or 'materials'")
             
