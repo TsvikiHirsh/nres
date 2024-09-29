@@ -70,7 +70,7 @@ class CrossSection:
 
             xsdata = np.load(cache_path, allow_pickle=True)[()]
             self.__xsdata__ = {
-                isotope: pd.Series(xsdata["cross_sections"][i], index=xsdata["energies"][i], name=isotope)
+                isotope.replace("-",""): pd.Series(xsdata["cross_sections"][i], index=xsdata["energies"][i], name=isotope.replace("-",""))
                 for i, isotope in enumerate(xsdata["isotopes"])
             }
 
@@ -81,6 +81,7 @@ class CrossSection:
         self.n = 0.
 
         for isotope, weight in self.isotopes.items():
+            isotope = isotope.replace("-","")
             if isinstance(isotope, str):
                 if weight > 0:
                     xs[isotope] = self.__xsdata__[isotope]

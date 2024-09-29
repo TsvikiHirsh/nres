@@ -80,7 +80,7 @@ class TransmissionModel(lmfit.Model):
 
         response = self.response.function(**kwargs)
 
-        weights = [kwargs.pop(key,val) for key,val in self.cross_section.weights.items()]
+        weights = [kwargs.pop(key.replace("_",""),val) for key,val in self.cross_section.weights.items()]
 
         bg = self.background.function(E,**kwargs)
 
@@ -161,8 +161,9 @@ class TransmissionModel(lmfit.Model):
         params.add("t0", value=t0, vary=vary)
         return params
 
-    
-    def _make_weight_params(self,vary:bool=False):
+
+
+    def _make_weight_params(self, vary: bool = False):
         """
         Creates lmfit parameters based on a pandas.Series of initial weights, ensuring the sum of weights is 1.
         
@@ -171,6 +172,7 @@ class TransmissionModel(lmfit.Model):
         """
         params = lmfit.Parameters()
         weight_series = deepcopy(self.cross_section.weights)
+        weight_series.index = weight_series.index.str.replace("-", "")
         param_names = weight_series.index
         N = len(weight_series)
 
@@ -186,7 +188,7 @@ class TransmissionModel(lmfit.Model):
             # Add (N-1) free parameters corresponding to the first (N-1) items
             for i, name in enumerate(param_names[:-1]):
                 initial_value = weights[i]  # Use weight values
-                params.add(f'p{i+1}',value=np.log(weights[i]/last_weight),brute_step=0.01,min=-14,max=14) # limit to 1ppm
+                params.add(f'p{i+1}',value=np.log(weights[i]/last_weight),min=-14,max=14) # limit to 1ppm
             
             # Define the normalization expression
             normalization_expr = ' + '.join([f'exp(p{i+1})' for i in range(N-1)])
