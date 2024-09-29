@@ -3,7 +3,7 @@ Models Module
 
 .. currentmodule:: nres.models
 
-.. autoclass:: TransmissionModel
+.. autoclass:: nres.TransmissionModel
    :members:
    :undoc-members:
    :show-inheritance:

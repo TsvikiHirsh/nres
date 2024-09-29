@@ -3,12 +3,12 @@ Response Module
 
 .. currentmodule:: nres.response
 
-.. autoclass:: Response
+.. autoclass:: nres.Response
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: Background
+.. autoclass:: nres.Background
    :members:
    :undoc-members:
    :show-inheritance:

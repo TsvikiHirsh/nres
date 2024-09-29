@@ -3,7 +3,7 @@ Data Module
 
 .. currentmodule:: nres.data
 
-.. autoclass:: Data
+.. autoclass:: nres.Data
    :members:
    :undoc-members:
    :show-inheritance:
