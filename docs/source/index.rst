@@ -68,7 +68,7 @@ Contact
 For questions, issues, or contributions, please visit the `GitHub repository <https://github.com/TsvikiHirsh/nres>`_.
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 1
    :caption: Contents:
 
    cross_section_usage

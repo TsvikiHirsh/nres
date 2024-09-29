@@ -157,17 +157,17 @@ class Data:
         **kwargs : dict, optional
             Additional plotting parameters:
             - xlim : tuple, optional
-                Limits for the x-axis (default: (0.5e6, 1e7)).
+              Limits for the x-axis (default: (0.5e6, 1e7)).
             - ylim : tuple, optional
-                Limits for the y-axis (default: (0., 1.)).
+              Limits for the y-axis (default: (0., 1.)).
             - ecolor : str, optional
-                Error bar color (default: "0.8").
+              Error bar color (default: "0.8").
             - xlabel : str, optional
-                Label for the x-axis (default: "Energy [eV]").
+              Label for the x-axis (default: "Energy [eV]").
             - ylabel : str, optional
-                Label for the y-axis (default: "Transmission").
+              Label for the y-axis (default: "Transmission").
             - logx : bool, optional
-                Whether to plot the x-axis on a logarithmic scale (default: True).
+              Whether to plot the x-axis on a logarithmic scale (default: True).
         
         Returns:
         --------
@@ -182,6 +182,6 @@ class Data:
         logx = kwargs.pop("logx", True)
         
         # Plot the data with error bars
-        self.table.dropna().plot(x="energy", y="trans", yerr="err",
-                                 xlim=xlim, ylim=ylim, logx=logx, ecolor=ecolor,
-                                 xlabel=xlabel, ylabel=ylabel, **kwargs)
+        return self.table.dropna().plot(x="energy", y="trans", yerr="err",
+                                        xlim=xlim, ylim=ylim, logx=logx, ecolor=ecolor,
+                                        xlabel=xlabel, ylabel=ylabel, **kwargs)
