@@ -18,50 +18,49 @@ Installation
 ------------
 To install from source, you can clone the repository and install it using pip:
 
-```bash
-git clone https://github.com/TsvikiHirsh/nres
-cd nres
-pip install .
-```
+.. code-block:: bash
+
+    git clone https://github.com/TsvikiHirsh/nres
+    cd nres
+    pip install .
 
 Basic Usage
 -----------
 Here's a quick example of how to use `nres`:
 
-```python
-# Import nres
-import nres
+.. code-block:: python
 
-# Define material
-Si = nres.CrossSection.from_material("Silicon")
+    # Import nres
+    import nres
 
-# Load data
-data = nres.Data.from_transmission("silicon.dat")
+    # Define material
+    Si = nres.CrossSection.from_material("Silicon")
 
-# Define model
-model = nres.TransmissionModel(Si, vary_background=True)
+    # Load data
+    data = nres.Data.from_transmission("silicon.dat")
 
-# Fit using lmfit
-result = model.fit(data, emin=0.4e6, emax=1.7e6)
+    # Define model
+    model = nres.TransmissionModel(Si, vary_background=True)
 
-# Plot fit results
-result.plot()
-```
-![fit results](docs/images/silicon_fit.png)
+    # Fit using lmfit
+    result = model.fit(data, emin=0.4e6, emax=1.7e6)
 
-For more detailed examples and advanced usage, please refer to our Jupyter [notebook demo](notebooks/nres_demo.ipynb).
+    # Plot fit results
+    result.plot()
+
+For more detailed examples and advanced usage, please refer to our Jupyter `notebook demo <notebooks/nres_demo.ipynb>`_.
 
 Contributing
 ------------
-See [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on how to contribute.
+See `CONTRIBUTING.md <CONTRIBUTING.md>`_ for instructions on how to contribute.
 
 License
 -------
-Distributed under the terms of the [MIT license](LICENSE).
+Distributed under the terms of the `MIT license <LICENSE>`_.
 
 Contact
 -------
-For questions, issues, or contributions, please visit the [GitHub repository](https://github.com/tsvikihirsh/nres).
+For questions, issues, or contributions, please visit the `GitHub repository <https://github.com/tsvikihirsh/nres>`_.
 
 .. toctree::
    :maxdepth: 3
