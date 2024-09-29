@@ -71,6 +71,7 @@ For questions, issues, or contributions, please visit the `GitHub repository <ht
    :maxdepth: 3
    :caption: Contents:
 
+   cross_section_usage
    modules  # Add your modules.rst file here
    cross_section
    data
