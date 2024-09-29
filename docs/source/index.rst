@@ -67,6 +67,12 @@ For questions, issues, or contributions, please visit the [GitHub repository](ht
    :maxdepth: 3
    :caption: Contents:
 
+   # Add additional documentation files here if any
+   # e.g. usage.rst, api.rst, etc.
+   # For example:
+   # usage
+   # api
+
 Indices and tables
 ==================
 
