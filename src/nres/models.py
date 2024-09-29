@@ -12,27 +12,39 @@ from typing import List, Optional
 
 class TransmissionModel(lmfit.Model):
     def __init__(self, cross_section, 
-                        response:str = "expo_gauss",
-                        background:str = "polynomial3",
-                        vary_weights:bool=None, 
-                        vary_background:bool=None, 
-                        vary_tof:bool=None,
-                        vary_response:bool=None,
+                        response: str = "expo_gauss",
+                        background: str = "polynomial3",
+                        vary_weights: bool = None, 
+                        vary_background: bool = None, 
+                        vary_tof: bool = None,
+                        vary_response: bool = None,
                         **kwargs):
         """
         Initialize the TransmissionModel, a subclass of lmfit.Model.
 
-        Parameters:
-        - cross_section: callable
+        Parameters
+        ----------
+        cross_section : callable
             A function that takes energy (E) as input and returns the cross section.
-        - vary_weights: bool, optional (default=False)
+        response : str, optional
+            The type of response function to use, by default "expo_gauss".
+        background : str, optional
+            The type of background function to use, by default "polynomial3".
+        vary_weights : bool, optional
             If True, allows the isotope weights to vary during fitting.
-        - vary_background: bool, optional (default=False)
+        vary_background : bool, optional
             If True, allows the background parameters (b0, b1, b2) to vary during fitting.
-        - vary_tof: bool, optional (default=False)
-            If True, allows the tof parameters (L0, t0) to vary during fitting.
-        - kwargs: dict
-            Additional keyword arguments for background parameters, such as `b0`, `b1`, and `b2`.
+        vary_tof : bool, optional
+            If True, allows the TOF (time-of-flight) parameters (L0, t0) to vary during fitting.
+        vary_response : bool, optional
+            If True, allows the response parameters to vary during fitting.
+        kwargs : dict, optional
+            Additional keyword arguments for model and background parameters.
+
+        Notes
+        -----
+        This model calculates the transmission function as a combination of 
+        cross-section, response function, and background.
         """
         super().__init__(self.transmission, **kwargs)
 
@@ -62,21 +74,34 @@ class TransmissionModel(lmfit.Model):
 
         
 
-    def transmission(self, E: np.ndarray, thickness: float=1, norm:float=1.,**kwargs):
+    def transmission(self, E: np.ndarray, thickness: float = 1, norm: float = 1., **kwargs):
         """
         Transmission function model with background components.
 
-        Parameters:
-        - E: array-like
+        Parameters
+        ----------
+        E : np.ndarray
             The energy values at which to calculate the transmission.
-        - thickness: float, optional (default=1)
-            The thickness of the material.
-        - norm: float, optional (default=1.)
+        thickness : float, optional
+            The thickness of the material (in cm), by default 1.
+        norm : float, optional
+            Normalization factor, by default 1.
+        kwargs : dict, optional
+            Additional arguments for background, response, or cross-section.
 
-
-        Returns:
-        - T: array-like
+        Returns
+        -------
+        np.ndarray
             The calculated transmission values.
+
+        Notes
+        -----
+        This function combines the cross-section with the response and background 
+        models to compute the transmission, which is given by:
+
+        .. math:: T(E) = \text{norm} \cdot e^{- \sigma \cdot \text{thickness} \cdot n} \cdot (1 - \text{bg}) + \text{bg}
+        
+        where `sigma` is the cross-section, `bg` is the background function, and `n` is the total atomic weight.
         """
         E = self._tof_correction(E,**kwargs)
 
@@ -98,17 +123,28 @@ class TransmissionModel(lmfit.Model):
         """
         Fit the model to the data.
 
-        Parameters:
-        - data: array-like
+        Parameters
+        ----------
+        data : pandas.DataFrame or nres.data.Data
             The data to fit the model to.
-        - params: Parameters object, optional
-            The initial parameter values for the fit.
-        - kwargs: dict
-            Additional keyword arguments passed to the lmfit.Model.fit method.
+        params : lmfit.Parameters, optional
+            Initial parameter values for the fit. If None, the current model parameters will be used.
+        emin : float, optional
+            The minimum energy for fitting, by default 0.5e6.
+        emax : float, optional
+            The maximum energy for fitting, by default 20.e6.
+        kwargs : dict, optional
+            Additional arguments passed to the lmfit.Model.fit method.
 
-        Returns:
-        - TransmissionModelResult
+        Returns
+        -------
+        lmfit.model.ModelResult
             The result of the fit.
+
+        Notes
+        -----
+        This function applies energy filtering to the input data based on `emin` and `emax`,
+        then fits the transmission model to the filtered data.
         """
         # self.cross_section.set_energy_range(emin,emax)
         if isinstance(data,pandas.DataFrame):
@@ -130,7 +166,27 @@ class TransmissionModel(lmfit.Model):
         # return TransmissionModelResult(fit_result, params or self.params)
         return fit_result
     
-    def plot(self,plot_bg=True,**kwargs):
+    def plot(self, plot_bg: bool = True, **kwargs):
+        """
+        Plot the results of the fit.
+
+        Parameters
+        ----------
+        plot_bg : bool, optional
+            Whether to include the background in the plot, by default True.
+        kwargs : dict, optional
+            Additional plot settings like color, marker size, etc.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes of the plot.
+
+        Notes
+        -----
+        This function generates a plot showing the transmission data, the best-fit curve, 
+        and residuals. If `plot_bg` is True, it will also plot the background function.
+        """
         fig, ax = plt.subplots(2,1,sharex=True,height_ratios=[3.5,1],figsize=(6,5))
         energy = self.fit_result.userkws["E"]
         data = self.fit_result.data
@@ -156,12 +212,23 @@ class TransmissionModel(lmfit.Model):
         
         return ax
     
-    def _make_tof_params(self,vary:bool=False,t0:float=0.,L0:float=1.):
+    def _make_tof_params(self, vary: bool = False, t0: float = 0., L0: float = 1.):
         """
-        Creates lmfit parameters for tof calibration with scale of the flight path distance L0 and time delay t0
-        
-        Returns:
-            Parameters: An lmfit Parameters object
+        Create time-of-flight (TOF) parameters for the model.
+
+        Parameters
+        ----------
+        vary : bool, optional
+            Whether to allow these parameters to vary during fitting, by default False.
+        t0 : float, optional
+            Initial time offset parameter, by default 0.
+        L0 : float, optional
+            Initial flight path distance scale parameter, by default 1.
+
+        Returns
+        -------
+        lmfit.Parameters
+            The TOF-related parameters.
         """
         params = lmfit.Parameters()
         params.add("L0", value=L0, min=0.5, max= 1.5, vary=vary)
@@ -172,10 +239,17 @@ class TransmissionModel(lmfit.Model):
 
     def _make_weight_params(self, vary: bool = False):
         """
-        Creates lmfit parameters based on a pandas.Series of initial weights, ensuring the sum of weights is 1.
-        
-        Returns:
-            Parameters: An lmfit Parameters object with weights normalized to sum to 1.
+        Create lmfit parameters based on initial isotope weights.
+
+        Parameters
+        ----------
+        vary : bool, optional
+            Whether to allow weights to vary during fitting, by default False.
+
+        Returns
+        -------
+        lmfit.Parameters
+            The normalized weight parameters for the model.
         """
         params = lmfit.Parameters()
         weight_series = deepcopy(self.cross_section.weights)
@@ -211,16 +285,20 @@ class TransmissionModel(lmfit.Model):
 
     def set_cross_section(self, xs: 'CrossSection', inplace: bool = True) -> 'TransmissionModel':
         """
-        Sets a new cross-section for the transmission model.
+        Set a new cross-section for the model.
 
-        Parameters:
-        - xs: CrossSection
+        Parameters
+        ----------
+        xs : CrossSection
             The new cross-section to apply.
-        - inplace: bool, optional, default=True
-            If True, modify the current object. If False, return a new modified object.
+        inplace : bool, optional
+            If True, modify the current object. If False, return a new modified object, 
+            by default True.
 
-        Returns:
-        - TransmissionModel: The updated model (self or new instance).
+        Returns
+        -------
+        TransmissionModel
+            The updated model (either modified in place or a new instance).
         """
         if inplace:
             self.cross_section = xs
@@ -236,18 +314,17 @@ class TransmissionModel(lmfit.Model):
 
     def update_params(self, params: dict = {}, values_only: bool = True, inplace: bool = True):
         """
-        Updates the parameters of the transmission model.
+        Update the parameters of the model.
 
-        Parameters:
-        - params: dict
-            A dictionary containing the new parameters to update.
-        - values_only: bool, optional, default=True
-            If True, update only the values of the parameters.
-        - inplace: bool, optional, default=True
-            If True, modify the current object. If False, return a new modified object.
-
-        Returns:
-        - TransmissionModel: The updated model (self or new instance).
+        Parameters
+        ----------
+        params : dict
+            Dictionary of new parameters to update.
+        values_only : bool, optional
+            If True, update only the values of the parameters, by default True.
+        inplace : bool, optional
+            If True, modify the current object. If False, return a new modified object, 
+            by default True.
         """
         if inplace:
             if values_only:
@@ -266,16 +343,14 @@ class TransmissionModel(lmfit.Model):
 
     def vary_all(self, vary: Optional[bool] = None, except_for: List[str] = []):
         """
-        Toggles the 'vary' attribute for all parameters in the model.
+        Toggle the 'vary' attribute for all model parameters.
 
-        Parameters:
-        - vary: bool, optional
-            If provided, set this value for all parameters' 'vary' attribute.
-        - except_for: list of str, optional
-            A list of parameters that should be excluded from this operation.
-
-        Returns:
-        - None
+        Parameters
+        ----------
+        vary : bool, optional
+            The value to set for all parameters' 'vary' attribute.
+        except_for : list of str, optional
+            List of parameter names to exclude from this operation, by default [].
         """
         if vary is not None:
             for param in self.params:
@@ -284,19 +359,23 @@ class TransmissionModel(lmfit.Model):
 
     def _tof_correction(self, E, L0: float = 1.0, t0: float = 0.0, **kwargs):
         """
-        Applies a time-of-flight correction to the energy based on the given parameters.
+        Apply a time-of-flight (TOF) correction to the energy values.
 
-        Parameters:
-        - E: energy (in arbitrary units)
-            The energy value to be corrected.
-        - L0: float, optional, default=1.0
-            The reference length factor for correction.
-        - t0: float, optional, default=0.0
-            The time offset for the correction.
-        - kwargs: additional arguments (currently unused)
+        Parameters
+        ----------
+        E : float or array-like
+            The energy values to correct.
+        L0 : float, optional
+            The scale factor for the flight path, by default 1.0.
+        t0 : float, optional
+            The time offset for the correction, by default 0.0.
+        kwargs : dict, optional
+            Additional arguments (currently unused).
 
-        Returns:
-        - E: Corrected energy value.
+        Returns
+        -------
+        np.ndarray
+            The corrected energy values.
         """
         tof = utils.energy2time(E, self.cross_section.L)
         dtof = (1.0 - L0) * tof + t0

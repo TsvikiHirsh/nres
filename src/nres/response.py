@@ -1,9 +1,6 @@
 import numpy as np
 import pandas as pd
-import nres.utils as utils
-from scipy.stats import exponnorm, norm, uniform
-from scipy.signal import convolve
-from scipy.ndimage import convolve1d
+from scipy.stats import exponnorm
 import matplotlib.pyplot as plt
 import lmfit
 
@@ -25,222 +22,173 @@ class Response:
         self.tgrid = self.grid * self.tstep
         self.eps = eps
 
-        # choose response function
+        # Choose the response function
         if kind == "expo_gauss":
             self.function = self.expogauss_response
-            self.params = lmfit.create_params(
-                K=dict(value=1., min=0.0001, vary=vary),
-                x0=dict(value=1e-9, vary=vary),
-                τ=dict(value=1e-9, min=1e-10, vary=vary)
+            self.params = lmfit.Parameters()
+            self.params.add_many(
+                ('K', 1.0, True, 0.0001),  # Exponential shape parameter
+                ('x0', 1e-9, vary),         # Location parameter (Gaussian)
+                ('τ', 1e-9, True, 1e-10)    # Exponential scale parameter
             )
-        elif not kind or kind == "none":
+        elif kind == "none":
             self.function = self.empty_response
+            self.params = lmfit.Parameters()  # Empty parameters
         else:
-            raise NotImplementedError("kind error: Only supported response kind is 'expo_gauss' or 'none' ")
+            raise NotImplementedError(f"Response kind '{kind}' is not supported. Use 'expo_gauss' or 'none'.")
 
     def cut_array_symmetric(self, arr, threshold):
         """
-        Symmetrically cuts the array based on a threshold, ensuring the center element is preserved,
-        and the resulting array has an odd number of elements.
+        Symmetrically cuts the array based on a threshold.
 
         Parameters:
-        arr (list or np.ndarray): The input array to be cut.
+        arr (np.ndarray): Input array to be cut.
         threshold (float): The threshold value for cutting the array.
 
         Returns:
-        np.ndarray: The symmetrically cut array with an odd number of elements.
-
-        Raises:
-        ValueError: If the input array length is not odd.
+        np.ndarray: Symmetrically cut array with an odd number of elements.
         """
         # Ensure the array length is odd
         if len(arr) % 2 == 0:
             raise ValueError("Input array length must be odd.")
 
-        # Find the center index of the array
-        center_index = len(arr) // 2
+        # Find center index and symmetric cut points
+        center_idx = len(arr) // 2
+        left_idx = np.argmax(arr[:center_idx][::-1] < threshold)  # Reverse search from center
+        right_idx = np.argmax(arr[center_idx:] < threshold)
         
-        # Find the left index (first below threshold) starting from the center
-        left_idx = center_index
-        while left_idx >= 0 and arr[left_idx] >= threshold:
-            left_idx -= 1
+        left_bound = center_idx - max(left_idx, right_idx)
+        right_bound = center_idx + max(left_idx, right_idx) + 1  # Ensure odd length
         
-        # Find the right index (first below threshold) starting from the center
-        right_idx = center_index
-        while right_idx < len(arr) and arr[right_idx] >= threshold:
-            right_idx += 1
-        
-        # Calculate the symmetric distance from the center
-        left_dist = center_index - (left_idx + 1)  # distance to the left threshold
-        right_dist = (right_idx - 1) - center_index  # distance to the right threshold
-        dist = max(left_dist, right_dist)
-        
-        # Create symmetric bounds (odd number of elements)
-        left_final = center_index - dist
-        right_final = center_index + dist + 1  # +1 to include the right bound
-        
-        # Return the symmetrically sliced array with odd length
-        return arr[left_final:right_final]
+        return arr[left_bound:right_bound]
 
     def empty_response(self, **kwargs):
         """
-        Generates an empty response array.
-
-        Returns:
-        list: A list containing [0.0, 1.0, 0.0] as the response.
+        Returns an empty response [0.0, 1.0, 0.0].
         """
-        return [0., 1., 0.]
+        return np.array([0., 1., 0.])
 
     def expogauss_response(self, K=0.01, x0=0., τ=1.0e-9, **kwargs):
         """
         Computes the exponential-Gaussian response function.
 
         Parameters:
-        K (float): The shape parameter for the exponential function.
-        x0 (float): The location parameter for the Gaussian function.
-        τ (float): The scale parameter for the exponential function.
+        K (float): Shape parameter for the exponential.
+        x0 (float): Location parameter for the Gaussian.
+        τ (float): Scale parameter for the exponential.
 
         Returns:
-        np.ndarray: The normalized response array after cutting with the threshold defined by eps.
+        np.ndarray: Normalized response array.
         """
-        response = exponnorm.pdf(self.tgrid, K, x0, τ)
-        response /= sum(response)
+        response = exponnorm.pdf(self.tgrid, K, loc=x0, scale=τ)
+        response /= np.sum(response)
         return self.cut_array_symmetric(response, self.eps)
 
-    def plot(self, params={}, **kwargs):
+    def plot(self, params=None, **kwargs):
         """
         Plots the response function.
 
         Parameters:
-        params (dict): The parameters for the response function. If empty, the default parameters are used.
-        **kwargs: Additional keyword arguments passed to the plot function.
-
-        Returns:
-        None
+        params (dict): Parameters for the response function.
+        **kwargs: Additional arguments for plot customization.
         """
-        # plot the response function
         ax = kwargs.pop("ax", plt.gca())
         xlabel = kwargs.pop("xlabel", "t [sec]")
-        if not params:
-            params = self.params
-        y = self.function(**params)
-        tof = np.arange(-len(y) // 2 + 1, +len(y) // 2 + 1, 1) * self.tstep
+
+        # Use the provided or default parameters
+        params = params if params else self.params
+        y = self.function(**params.valuesdict())
+        tof = np.arange(-len(y) // 2 + 1, len(y) // 2 + 1) * self.tstep
         df = pd.Series(y, index=tof, name="Response")
         df.plot(ax=ax, xlabel=xlabel, **kwargs)
 
 
-# Background class
 class Background:
     def __init__(self, kind="expo_norm", vary: bool = False):
         """
         Initializes the Background object with specified parameters.
 
         Parameters:
-        kind (str): The type of background function to use. Options are 'none', 'constant', 'polynomial3', or 'polynomial5'.
-        vary (bool): If True, the parameters can vary during fitting. Default is False.
+        kind (str): Type of background function ('constant', 'polynomial3', 'polynomial5', or 'none').
+        vary (bool): If True, the parameters can vary during fitting.
         """
-        # choose background function
+        self.params = lmfit.Parameters()
         if kind == "polynomial3":
             self.function = self.polynomial3_background
-            self.params = lmfit.create_params(
-                b0=dict(value=0., vary=vary),
-                b1=dict(value=0., vary=vary),
-                b2=dict(value=0., vary=vary)
+            self.params.add_many(
+                ('b0', 0.0, vary),
+                ('b1', 0.0, vary),
+                ('b2', 0.0, vary)
             )
         elif kind == "polynomial5":
             self.function = self.polynomial5_background
-            self.params = lmfit.create_params(
-                b0=dict(value=0., vary=vary),
-                b1=dict(value=0., vary=vary),
-                b2=dict(value=0., vary=vary),
-                b3=dict(value=0., vary=vary),
-                b4=dict(value=0., vary=vary)
+            self.params.add_many(
+                ('b0', 0.0, vary),
+                ('b1', 0.0, vary),
+                ('b2', 0.0, vary),
+                ('b3', 0.0, vary),
+                ('b4', 0.0, vary)
             )
         elif kind == "constant":
             self.function = self.constant_background
-            self.params = lmfit.create_params(b0=dict(value=0., vary=vary))
-        elif not kind or kind == "none":
+            self.params.add('b0', 0.0, vary=vary)
+        elif kind == "none":
             self.function = self.empty_background
-            self.params = lmfit.Parameters()  # empty
         else:
-            raise NotImplementedError("kind error: Only supported background kinds are 'none', 'constant', 'polynomial3' or 'polynomial5'")
+            raise NotImplementedError(f"Background kind '{kind}' is not supported. Use 'none', 'constant', 'polynomial3', or 'polynomial5'.")
 
-    def empty_background(self, E: np.ndarray, **kwargs) -> np.ndarray:
+    def empty_background(self, E, **kwargs):
         """
-        Generates a zero background array.
-
-        Parameters:
-        E (np.ndarray): The energy values (not used in this function).
-
-        Returns:
-        np.ndarray: An array of zeros with the same shape as E.
+        Returns a zero background array.
         """
         return np.zeros_like(E)
 
-    def constant_background(self, E: np.ndarray, b0: float = 0., **kwargs) -> np.ndarray:
+    def constant_background(self, E, b0=0., **kwargs):
         """
-        Generates a constant background array.
+        Generates a constant background.
 
         Parameters:
-        E (np.ndarray): The energy values for which the background is calculated.
-        b0 (float): The constant value for the background.
-
-        Returns:
-        np.ndarray: An array of the constant value b0 with the same shape as E.
+        E (np.ndarray): Energy values.
+        b0 (float): Constant background value.
         """
-        return b0 * np.ones_like(E)
+        return np.full_like(E, b0)
 
-    def polynomial3_background(self, E: np.ndarray, b0: float = 0., b1: float = 1., b2: float = 0., **kwargs) -> np.ndarray:
+    def polynomial3_background(self, E, b0=0., b1=1., b2=0., **kwargs):
         """
         Computes a third-degree polynomial background.
 
         Parameters:
-        E (np.ndarray): The energy values for which the background is calculated.
-        b0 (float): Coefficient for the constant term.
-        b1 (float): Coefficient for the first-degree term.
-        b2 (float): Coefficient for the second-degree term.
-
-        Returns:
-        np.ndarray: The computed polynomial background values for the given energy values.
+        E (np.ndarray): Energy values.
+        b0 (float): Constant term.
+        b1 (float): Linear term.
+        b2 (float): Quadratic term.
         """
-        bg = b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E)
-        return bg
+        return b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E)
 
-    def polynomial5_background(self, E: np.ndarray, b0: float = 0., b1: float = 1.,
-                               b2: float = 0., b3: float = 0., b4: float = 0., **kwargs) -> np.ndarray:
+    def polynomial5_background(self, E, b0=0., b1=1., b2=0., b3=0., b4=0., **kwargs):
         """
         Computes a fifth-degree polynomial background.
 
         Parameters:
-        E (np.ndarray): The energy values for which the background is calculated.
-        b0 (float): Coefficient for the constant term.
-        b1 (float): Coefficient for the first-degree term.
-        b2 (float): Coefficient for the second-degree term.
-        b3 (float): Coefficient for the third-degree term.
-        b4 (float): Coefficient for the fourth-degree term.
-
-        Returns:
-        np.ndarray: The computed polynomial background values for the given energy values.
+        E (np.ndarray): Energy values.
+        b0 (float): Constant term.
+        b1 (float): Linear term.
+        b2 (float): Quadratic term.
+        b3 (float): Cubic term.
+        b4 (float): Quartic term.
         """
-        bg = b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E) + b3 * E + b4 * E**2
-        return bg
+        return b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E) + b3 * E + b4 * E**2
 
-    def plot(self, E: np.ndarray, params={}, **kwargs):
+    def plot(self, E, params=None, **kwargs):
         """
         Plots the background function.
 
         Parameters:
-        E (np.ndarray): The energy values for which the background is calculated.
-        params (dict): The parameters for the background function. If empty, the default parameters are used.
-        **kwargs: Additional keyword arguments passed to the plot function.
-
-        Returns:
-        None
+        E (np.ndarray): Energy values.
+        params (dict): Parameters for the background function.
         """
-        # plot the background function
         ax = kwargs.pop("ax", plt.gca())
-        if not params:
-            params = self.params
-        y = self.function(E, **params)
+        params = params if params else self.params
+        y = self.function(E, **params.valuesdict())
         df = pd.Series(y, index=E, name="Background")
         df.plot(ax=ax, **kwargs)

@@ -48,15 +48,20 @@ Here's a quick example of how to use `nres`:
     # Plot fit results
     result.plot()
 
-For more detailed examples and advanced usage, please refer to our Jupyter `notebook demo <notebooks/nres_demo.ipynb>`_.
+.. image:: https://github.com/tsvikihirsh/nres/raw/main/docs/images/silicon_fit.png
+   :alt: Fit results
+   :align: center
+   :width: 600px
+
+For more detailed examples and advanced usage, please refer to our Jupyter `notebook demo <nhttps://github.com/tsvikihirsh/nres/otebooks/nres_demo.ipynb>`_.
 
 Contributing
 ------------
-See `CONTRIBUTING.md <CONTRIBUTING.md>`_ for instructions on how to contribute.
+See `CONTRIBUTING.md <https://github.com/tsvikihirsh/nres/CONTRIBUTING.md>`_ for instructions on how to contribute.
 
 License
 -------
-Distributed under the terms of the `MIT license <LICENSE>`_.
+Distributed under the terms of the `MIT license <https://github.com/tsvikihirsh/nres/LICENSE>`_.
 
 Contact
 -------
@@ -66,11 +71,7 @@ For questions, issues, or contributions, please visit the `GitHub repository <ht
    :maxdepth: 3
    :caption: Contents:
 
-   # Add additional documentation files here if any
-   # e.g. usage.rst, api.rst, etc.
-   # For example:
-   # usage
-   # api
+   modules  # Add your modules.rst file here
 
 Indices and tables
 ==================
