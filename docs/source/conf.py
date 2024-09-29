@@ -31,6 +31,7 @@ html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 pygments_style = 'sphinx'
 autosummary_generate = True  # Generate autosummary pages
+autodoc_mock_imports = ['nres._integrate_xs']
 
 # Add your project source directory to sys.path
 import os
