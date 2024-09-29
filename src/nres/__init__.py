@@ -14,4 +14,4 @@ from nres.models import TransmissionModel
 from nres.data import Data
 import nres.utils as utils
 
-materials, elements = utils.load_or_create_materials_cache()
+materials, elements, isotopes = utils.load_or_create_materials_cache()

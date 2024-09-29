@@ -81,8 +81,8 @@ class CrossSection:
         self.n = 0.
 
         for isotope, weight in self.isotopes.items():
-            isotope = isotope.replace("-","")
             if isinstance(isotope, str):
+                isotope = isotope.replace("-","")
                 if weight > 0:
                     xs[isotope] = self.__xsdata__[isotope]
                     updated_isotopes[isotope] = weight
@@ -161,6 +161,7 @@ class CrossSection:
         new_self.total_weight = 1.
         new_self.table["total"] = (new_self.table * new_self.weights).sum(axis=1)
         new_self.n = self.total_weight * self.n + other.total_weight * other.n
+        new_self.isotopes = new_self.weights.to_dict()
 
         return new_self
 
@@ -195,7 +196,7 @@ class CrossSection:
             self._set_weights(weights=weights)
         if response is None:
             response = [1.]
-        return np.array(integrate_cross_section(self.table["total"].index.values, self.table["total"].values, E, response, self.L))
+        return np.array(integrate_cross_section(self.table["total"].index.values, self.table["total"].values, E, response))
 
     def plot(self, **kwargs):
         """
@@ -239,8 +240,12 @@ class CrossSection:
             try: # try finding the material name in the materials database
                 mat = nres.materials[formulas.get(mat, mat)]
             except KeyError: # otherwise try the elements database
-                formulas = {nres.elements[element]["formula"]: nres.elements[element]["name"] for element in nres.elements}
-                mat = nres.elements[formulas.get(mat.capitalize(), mat.capitalize())]
+                try:
+                    formulas = {nres.elements[element]["formula"]: nres.elements[element]["name"] for element in nres.elements}
+                    mat = nres.elements[formulas.get(mat.capitalize(), mat.capitalize())]
+                except KeyError: # otherwise try to find it in the isotopes database
+                    mat = nres.isotopes[mat.capitalize().replace("-","")]
+
         
         short_name = short_name or mat["name"]
 

@@ -62,21 +62,35 @@ def materials_dict():
         materials[mat_name] = {"name":mat_name,"density":density,"n":n,"formula":formula,"elements":elements}
     return materials
 
-def elements_dict():
-    mat = {}
+def elements_and_isotopes_dict():
+    elements = {}
     import mendeleev
-    for element in mendeleev.get_all_elements():
+    all_elements = mendeleev.get_all_elements()
+    for element in all_elements:
         name = element.name
-        # if not element.is_radioactive:
-        mat[name] = {}
+        elements[name] = {}
     
-        mat[name]["name"] = name
-        mat[name]["n"] = element.density/element.mass*0.602214076 # atoms/barn
-        mat[name]["formula"] = element.symbol
-        mat[name]["density"] = element.density
-        mat[name]["elements"] = {element.symbol:{"weight":1}}
-        mat[name]["elements"][element.symbol]["isotopes"] = {f"{iso.element.symbol}-{iso.mass_number}":iso.abundance*0.01 for iso in element.isotopes if iso.abundance}
-    return mat
+        elements[name]["name"] = name
+        elements[name]["n"] = element.density/element.mass*0.602214076 # atoms/barn
+        elements[name]["formula"] = element.symbol
+        elements[name]["density"] = element.density
+        elements[name]["elements"] = {element.symbol:{"weight":1}}
+        elements[name]["elements"][element.symbol]["isotopes"] = {f"{iso.element.symbol}{iso.mass_number}":iso.abundance*0.01 for iso in element.isotopes if iso.abundance}
+
+    isotopes = {}
+    for element in all_elements:
+        for iso in element.isotopes:
+            if iso.abundance:
+                name = f"{iso.element.symbol}{iso.mass_number}"
+                isotopes[name] = {}
+                isotopes[name]["name"] = name
+                isotopes[name]["n"] = element.density/iso.mass*0.602214076 # atoms/barn
+                isotopes[name]["formula"] = name
+                isotopes[name]["density"] = element.density
+                isotopes[name]["elements"] = {element.symbol:{"weight":1}}
+                isotopes[name]["elements"][element.symbol]["isotopes"] = {name:1.}
+    return elements, isotopes
+
 
 def format_isotope(isotope_string):
     # Find where the digits start in the string
@@ -105,25 +119,27 @@ def load_or_create_materials_cache():
         with shelve.open(str(cache_path.with_suffix(""))) as fid:
             materials = fid.get("materials")
             elements = fid.get("elements")
+            isotopes = fid.get("isotopes")
         
         # If the cache is incomplete, regenerate it
         if materials is None or elements is None:
             return create_and_save_materials_cache()
         
-        return materials, elements
+        return materials, elements, isotopes
     else:
         return create_and_save_materials_cache()
 
 def create_and_save_materials_cache():
     materials = materials_dict()
-    elements = elements_dict()
+    elements, isotopes = elements_and_isotopes_dict()
     
     cache_path = get_cache_path() / "materials"
     with shelve.open(str(cache_path)) as fid:
         fid["materials"] = materials
         fid["elements"] = elements
+        fid["isotopes"] = isotopes
     
-    return materials, elements
+    return materials, elements, isotopes
 
 def download_xsdata():
     """Download the xsdata.npy file from GitHub and save it to the package directory."""
