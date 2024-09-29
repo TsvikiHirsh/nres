@@ -4,19 +4,17 @@
 [![PyPI version][pypi-version]][pypi-link]
 [![PyPI platforms][pypi-platforms]][pypi-link]
 
-Simple yet powerful package for neutron resonance fitting
+Simple yet powerful package for fitting neutron resonances.
 
-# nres
-
-nres (pronounced N-res) is a simple yet powerful tool for fitting neutron resonances. It allows quick and easy quantitative fitting of total cross-section for neutron absorption resonances transmission spectrum in the epithermal and fast energy regions.
+`nres` (pronounced N-res) allows quick and easy quantitative fitting of total cross-section for neutron absorption resonances transmission spectrum in the epithermal and fast energy regions.
 
 ## Features
 
 - Flexible and simple way to generate and combine cross-sections from different isotopic materials
 - Built-in database of many useful materials and elements
 - Cross-sections taken from ENDF8.0
-- Built on lmfit for intuitive and powerful fit exploration
-- Python API leveraging popular libraries like numpy and pandas
+- Built on `lmfit` for intuitive and powerful fit exploration
+- Python API leveraging popular libraries like `numpy` and `pandas`
 - Methods to define response functions and background functions
 - Plotting utilities for concise result visualization
 - Fast cross-section integration and convolution with response function using C++ core code
@@ -52,9 +50,11 @@ result = model.fit(data, emin=0.4e6, emax=1.7e6)
 # Plot fit results
 result.plot()
 ```
+![fit results](docs/images/silicon_fit.png)
 
-## Usage
+## Basic Usage
 
+For more detailed examples and advanced usage, please refer to our Jupyter [notebook demo](notebooks/nres_demo.ipynb)
 
 ## Contributing
 
