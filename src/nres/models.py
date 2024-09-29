@@ -2,20 +2,22 @@ import lmfit
 import numpy as np
 import nres.utils as utils
 from nres.response import Response, Background
+from nres.cross_section import CrossSection
 from nres.data import Data
 import pandas
 import matplotlib.pyplot as plt
-from copy import deepcopy
+from copy import deepcopy 
+from typing import List, Optional
 
 
 class TransmissionModel(lmfit.Model):
     def __init__(self, cross_section, 
                         response:str = "expo_gauss",
                         background:str = "polynomial3",
-                        vary_weights:bool=False, 
-                        vary_background:bool=False, 
-                        vary_tof:bool=False,
-                        vary_response:bool=False,
+                        vary_weights:bool=None, 
+                        vary_background:bool=None, 
+                        vary_tof:bool=None,
+                        vary_response:bool=None,
                         **kwargs):
         """
         Initialize the TransmissionModel, a subclass of lmfit.Model.
@@ -37,20 +39,20 @@ class TransmissionModel(lmfit.Model):
         self.cross_section = cross_section
 
         self.params = self.make_params()
-        if vary_weights:
+        if vary_weights is not None:
             self.params += self._make_weight_params(vary=vary_weights)
-        if vary_tof:
+        if vary_tof is not None:
             self.params += self._make_tof_params(vary=vary_tof,**kwargs)
 
 
         self.response = Response(kind=response,vary=vary_response,
                                  tstep=self.cross_section.tstep)
-        if response:
+        if vary_response is not None:
             self.params += self.response.params
 
 
         self.background = Background(kind=background,vary=vary_background)
-        if background:
+        if vary_background is not None:
             self.params += self.background.params
 
 
@@ -206,10 +208,98 @@ class TransmissionModel(lmfit.Model):
             params.add(f'{param_names[-1]}', expr=f'1 / (1 + {normalization_expr})')
 
         return params
-        
-    def _tof_correction(self,E,L0:float=1.,t0:float=0.,**kwargs):
-        tof = utils.energy2time(E,self.cross_section.L)
-        dtof = (1.-L0)*tof + t0
-        E = utils.time2energy(tof+dtof,self.cross_section.L)
+
+    def set_cross_section(self, xs: 'CrossSection', inplace: bool = True) -> 'TransmissionModel':
+        """
+        Sets a new cross-section for the transmission model.
+
+        Parameters:
+        - xs: CrossSection
+            The new cross-section to apply.
+        - inplace: bool, optional, default=True
+            If True, modify the current object. If False, return a new modified object.
+
+        Returns:
+        - TransmissionModel: The updated model (self or new instance).
+        """
+        if inplace:
+            self.cross_section = xs
+            params = self._make_weight_params()
+            self.params += params
+            return self
+        else:
+            new_self = deepcopy(self)
+            new_self.cross_section = xs
+            params = new_self._make_weight_params()
+            new_self.params += params
+            return new_self
+
+    def update_params(self, params: dict = {}, values_only: bool = True, inplace: bool = True):
+        """
+        Updates the parameters of the transmission model.
+
+        Parameters:
+        - params: dict
+            A dictionary containing the new parameters to update.
+        - values_only: bool, optional, default=True
+            If True, update only the values of the parameters.
+        - inplace: bool, optional, default=True
+            If True, modify the current object. If False, return a new modified object.
+
+        Returns:
+        - TransmissionModel: The updated model (self or new instance).
+        """
+        if inplace:
+            if values_only:
+                for param in params:
+                    self.params[param].set(value=params[param].value)
+            else:
+                self.params = params
+        else:
+            new_self = deepcopy(self)
+            if values_only:
+                for param in params:
+                    new_self.params[param].set(value=params[param].value)
+            else:
+                new_self.params = params
+            return new_self  # Ensure a return statement in the non-inplace scenario.
+
+    def vary_all(self, vary: Optional[bool] = None, except_for: List[str] = []):
+        """
+        Toggles the 'vary' attribute for all parameters in the model.
+
+        Parameters:
+        - vary: bool, optional
+            If provided, set this value for all parameters' 'vary' attribute.
+        - except_for: list of str, optional
+            A list of parameters that should be excluded from this operation.
+
+        Returns:
+        - None
+        """
+        if vary is not None:
+            for param in self.params:
+                if param not in except_for:
+                    self.params[param].set(vary=vary)
+
+    def _tof_correction(self, E, L0: float = 1.0, t0: float = 0.0, **kwargs):
+        """
+        Applies a time-of-flight correction to the energy based on the given parameters.
+
+        Parameters:
+        - E: energy (in arbitrary units)
+            The energy value to be corrected.
+        - L0: float, optional, default=1.0
+            The reference length factor for correction.
+        - t0: float, optional, default=0.0
+            The time offset for the correction.
+        - kwargs: additional arguments (currently unused)
+
+        Returns:
+        - E: Corrected energy value.
+        """
+        tof = utils.energy2time(E, self.cross_section.L)
+        dtof = (1.0 - L0) * tof + t0
+        E = utils.time2energy(tof + dtof, self.cross_section.L)
         return E
 
