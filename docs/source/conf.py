@@ -30,6 +30,7 @@ exclude_patterns = []
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 pygments_style = 'sphinx'
+autosummary_generate = True  # Generate autosummary pages
 
 # Add your project source directory to sys.path
 import os

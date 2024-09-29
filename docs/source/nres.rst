@@ -6,6 +6,7 @@ Submodules
 
 .. toctree::
    :maxdepth: 4
+   :caption: Modules
 
    cross_section
    data
