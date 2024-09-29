@@ -14,25 +14,6 @@ release = '0.1'
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = []
-
-templates_path = ['_templates']
-exclude_patterns = []
-
-
-
-# -- Options for HTML output -------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
-
-html_theme = 'alabaster'
-html_static_path = ['_static']
-
-
-import os
-import sys
-sys.path.insert(0, os.path.abspath('../../src'))
-
-# Add any Sphinx extension module names here
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
@@ -40,8 +21,17 @@ extensions = [
     'sphinx.ext.viewcode',
 ]
 
-# The theme to use for HTML and HTML Help pages
-html_theme = 'sphinx_rtd_theme'
+templates_path = ['_templates']
+exclude_patterns = []
 
-# The name of the Pygments (syntax highlighting) style to use
+# -- Options for HTML output -------------------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
+
+html_theme = 'sphinx_rtd_theme'
+html_static_path = ['_static']
 pygments_style = 'sphinx'
+
+# Add your project source directory to sys.path
+import os
+import sys
+sys.path.insert(0, os.path.abspath('../../src'))
