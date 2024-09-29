@@ -1,8 +1,10 @@
 import numpy as np
+import pandas as pd
 import nres.utils as utils
 from scipy.stats import exponnorm, norm, uniform
 from scipy.signal import convolve
 from scipy.ndimage import convolve1d
+import matplotlib.pyplot as plt
 import lmfit
 
 class Response:
@@ -20,9 +22,9 @@ class Response:
         # choose response function
         if kind == "expo_gauss":
             self.function = self.expogauss_response
-            self.params = lmfit.create_params(K=dict(value=0.01, min=0.0001,vary=vary),
-                                            x0=dict(value=0.,vary=vary),
-                                            τ=dict(value=1.e-9,min=1e-9,vary=vary))
+            self.params = lmfit.create_params(K=dict(value=1., min=0.0001,vary=vary),
+                                            x0=dict(value=1e-9,vary=vary),
+                                            τ=dict(value=1e-9,min=1e-10,vary=vary))
         elif not kind or kind=="none":
             self.function = self.empty_response
         else:
@@ -78,6 +80,16 @@ class Response:
         response /= sum(response)
         return self.cut_array_symmetric(response,self.eps)
     
+    def plot(self,params={},**kwargs):
+        # plot the response function
+        ax = kwargs.pop("ax",plt.gca())
+        xlabel = kwargs.pop("xlabel","t [sec]")
+        if not params:
+            params = self.params
+        y = self.function(**params)
+        tof = np.arange(-len(y)//2+1,+len(y)//2+1,1)*self.tstep
+        df = pd.Series(y,index=tof,name="Response")
+        df.plot(ax=ax,xlabel=xlabel,**kwargs)
 
 
 
@@ -128,3 +140,15 @@ class Background:
         # Background polynomial
         bg = b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E) + b3 * np.exp(-b4/np.sqrt(E))
         return bg
+    
+    def plot(self,E:np.ndarray=[],params={},**kwargs):
+        # plot the background
+        ax = kwargs.pop("ax",plt.gca())
+        ls = kwargs.pop("ls","--")
+        color = kwargs.pop("color","0.5")
+        label = kwargs.pop("label","Background")
+        bgargs = {key:params[key].value for key in self.params if key in params}
+        if len(E)==0:
+            E = np.linspace(0,2e7,100)
+        df = pd.Series(self.function(E,**bgargs),index=E,name="Background")
+        df.plot(ax=ax,ls=ls,color=color,label=label,**kwargs)

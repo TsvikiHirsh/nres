@@ -45,12 +45,12 @@ class TransmissionModel(lmfit.Model):
 
         self.response = Response(kind=response,vary=vary_response,
                                  tstep=self.cross_section.tstep)
-        if vary_response:
+        if response:
             self.params += self.response.params
 
 
         self.background = Background(kind=background,vary=vary_background)
-        if vary_background:
+        if background:
             self.params += self.background.params
 
 
@@ -128,7 +128,7 @@ class TransmissionModel(lmfit.Model):
         # return TransmissionModelResult(fit_result, params or self.params)
         return fit_result
     
-    def plot(self,**kwargs):
+    def plot(self,plot_bg=True,**kwargs):
         fig, ax = plt.subplots(2,1,sharex=True,height_ratios=[3.5,1],figsize=(6,5))
         energy = self.fit_result.userkws["E"]
         data = self.fit_result.data
@@ -138,15 +138,20 @@ class TransmissionModel(lmfit.Model):
         color = kwargs.pop("color","seagreen")
         ecolor = kwargs.pop("ecolor","0.8")
         ms = kwargs.pop("ms",2)
-        ax[0].errorbar(energy,data,err,marker="o",color=color,ms=ms,zorder=-1,ecolor=ecolor)  
-        ax[0].plot(energy,best_fit,color="0.2") 
+        ax[0].errorbar(energy,data,err,marker="o",color=color,ms=ms,zorder=-1,ecolor=ecolor,label="Best fit")  
+        ax[0].plot(energy,best_fit,color="0.2",label="Data") 
         ax[0].set_ylabel("Transmission")
         ax[0].set_title(self.cross_section.name)
         ax[1].plot(energy,residual,color=color)
-        ax[1].set_ylabel("residuals [1σ]")
+        ax[1].set_ylabel("Residuals [1σ]")
         ax[1].set_xlabel("Energy [eV]")
+        if plot_bg and self.background.params:
+            self.background.plot(E=energy,ax=ax[0],params=self.params,**kwargs)
+            ax[0].legend(["Best fit","Background","Data"], fontsize=9,reverse=True,title=f"χ$^2$: {self.fit_result.redchi:.2f}")
+        else:
+            ax[0].legend(["Best fit","Data"], fontsize=9,reverse=True,title=f"χ$^2$: {self.fit_result.redchi:.2f}")
         plt.subplots_adjust(hspace=0.05)
-        ax[0].legend(["Best fit","Data"],title=f"χ$^2$: {self.fit_result.redchi:.2f}")
+        
         return ax
     
     def _make_tof_params(self,vary:bool=False,t0:float=0.,L0:float=1.):
