@@ -10,7 +10,6 @@ PYBIND11_MODULE(_integrate_xs, m) {
           py::arg("xs_energies"), 
           py::arg("xs_values"), 
           py::arg("energy_grid"), 
-          py::arg("response") = std::vector<double>{0.,1.,0.},  // Default response
-          py::arg("flight_path_length") = 10.0d  // Default flight path length 
+          py::arg("response") = std::vector<double>{0.,1.,0.} // Default response
     );
 }

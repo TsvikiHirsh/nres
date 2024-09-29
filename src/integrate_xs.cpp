@@ -3,10 +3,6 @@
 #include <algorithm>
 #include <numeric>
 
-// Constants
-const double SPEED_OF_LIGHT = 299792458;  // m/s
-const double MASS_OF_NEUTRON = 939.56542052 * 1e6 / (SPEED_OF_LIGHT * SPEED_OF_LIGHT);  // [eV s²/m²]
-
 // Linear interpolation function
 double linear_interp(const std::vector<double>& xs_energies, const std::vector<double>& xs_values, double energy) {
     size_t n = xs_energies.size();
@@ -26,40 +22,6 @@ double linear_interp(const std::vector<double>& xs_energies, const std::vector<d
     return 0.0; // Default return in case of error
 }
 
-// Calculate the bin spacing in 1/sqrt(E) and add a new bin accordingly
-std::vector<double> add_prefix_bin(const std::vector<double>& energy_grid) {
-    if (energy_grid.size() < 2) return energy_grid;
-
-    // Calculate 1/sqrt(E) for the first two energy bins
-    double inv_sqrt_E1 = 1.0 / std::sqrt(energy_grid[0]);
-    double inv_sqrt_E2 = 1.0 / std::sqrt(energy_grid[1]);
-
-    // The difference in 1/sqrt(E) is approximately constant
-    double spacing = inv_sqrt_E2 - inv_sqrt_E1;
-
-    // Calculate the new bin by subtracting the spacing in 1/sqrt(E) and converting back to energy
-    double new_inv_sqrt_E = inv_sqrt_E1 - spacing;
-    double new_bin = 1.0 / (new_inv_sqrt_E * new_inv_sqrt_E);  // Convert back to energy
-
-    // Prepend the new bin to the energy grid
-    std::vector<double> new_grid = { new_bin };
-    new_grid.insert(new_grid.end(), energy_grid.begin(), energy_grid.end());
-    return new_grid;
-}
-
-// Convert time-of-flight (tof) to neutron energy (in eV) using relativistic formula
-double time2energy(double tof, double flight_path_length) {
-    double v = flight_path_length / tof;
-    double gamma = 1.0 / std::sqrt(1.0 - (v * v) / (SPEED_OF_LIGHT * SPEED_OF_LIGHT));
-    return (gamma - 1.0) * MASS_OF_NEUTRON * SPEED_OF_LIGHT * SPEED_OF_LIGHT;
-}
-
-// Convert neutron energy (in eV) to time-of-flight (tof) using relativistic formula
-double energy2time(double energy, double flight_path_length) {
-    double gamma = 1.0 + energy / (MASS_OF_NEUTRON * SPEED_OF_LIGHT * SPEED_OF_LIGHT);
-    double v = SPEED_OF_LIGHT * std::sqrt(1.0 - 1.0 / (gamma * gamma));
-    return flight_path_length / v;
-}
 // Convolve the values with the kernel and return the result with the same size as the input
 std::vector<double> convolve_with_kernel(const std::vector<double>& values, const std::vector<double>& kernel) {
     int values_size = values.size();
@@ -91,8 +53,7 @@ std::vector<double> integrate_cross_section(
     const std::vector<double>& xs_energies,
     const std::vector<double>& xs_values,
     const std::vector<double>& energy_grid,
-    const std::vector<double>& kernel,
-    double flight_path_length = 1.0)
+    const std::vector<double>& kernel)
 {
     // Handle the case when xs_values has only one element
     if (xs_values.size() == 1) {
