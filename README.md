@@ -52,9 +52,9 @@ result.plot()
 ```
 ![fit results](docs/images/silicon_fit.png)
 
-## Basic Usage
+## Usage
 
-For more detailed examples and advanced usage, please refer to our Jupyter [notebook demo](notebooks/nres_demo.ipynb)
+For more detailed examples and advanced usage, please refer to our Jupyter [notebook demo](notebooks/nres_demo.ipynb) or to our [documentation page](https://nres.readthedocs.io).
 
 ## Contributing
 
