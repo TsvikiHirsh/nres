@@ -72,7 +72,10 @@ For questions, issues, or contributions, please visit the `GitHub repository <ht
    :caption: Contents:
 
    cross_section_usage
-   modules  # Add your modules.rst file here
+   data_usage
+   models_physics
+   models_usage 
+   modules
    cross_section
    data
    response
