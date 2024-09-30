@@ -188,7 +188,9 @@ class Background:
         params (dict): Parameters for the background function.
         """
         ax = kwargs.pop("ax", plt.gca())
+        ls = kwargs.pop("ls", "--")
+        color = kwargs.pop("color", "0.5")
         params = params if params else self.params
         y = self.function(E, **params.valuesdict())
         df = pd.Series(y, index=E, name="Background")
-        df.plot(ax=ax, **kwargs)
+        df.plot(ax=ax, color=color,ls=ls,**kwargs)

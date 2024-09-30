@@ -204,7 +204,7 @@ class TransmissionModel(lmfit.Model):
         ax[1].set_ylabel("Residuals [1σ]")
         ax[1].set_xlabel("Energy [eV]")
         if plot_bg and self.background.params:
-            self.background.plot(E=energy,ax=ax[0],params=self.params,**kwargs)
+            self.background.plot(E=energy,ax=ax[0],params=self.fit_result.params,**kwargs)
             ax[0].legend(["Best fit","Background","Data"], fontsize=9,reverse=True,title=f"χ$^2$: {self.fit_result.redchi:.2f}")
         else:
             ax[0].legend(["Best fit","Data"], fontsize=9,reverse=True,title=f"χ$^2$: {self.fit_result.redchi:.2f}")
