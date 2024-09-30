@@ -48,7 +48,7 @@ class CrossSection:
         """
         self.isotopes = isotopes or {}
         self.name = name
-        self.total_weight = total_weight
+        self.total_weight = total_weight if self.isotopes else 0.
         self.L = L
         self.tstep = tstep
         self.tbins = tbins
@@ -119,7 +119,7 @@ class CrossSection:
         self.weights /= self.weights.sum()
 
         # Update the total cross-section
-        self.table["total"] = (self.table.drop(columns="total", errors="ignore") * self.weights).sum(axis=1)
+        self.table["total"] = (self.table.drop(columns="total", errors="ignore") * self.weights).sum(axis=1).astype(float)
 
     def _set_energy_range(self, emin: float = 0.5e6, emax: float = 2.0e7):
         """Set the energy range for the cross-section data."""
@@ -159,7 +159,7 @@ class CrossSection:
 
         new_self.weights = combined_weights
         new_self.total_weight = 1.
-        new_self.table["total"] = (new_self.table * new_self.weights).sum(axis=1)
+        new_self.table["total"] = (new_self.table * new_self.weights).sum(axis=1).astype(float)
         new_self.n = self.total_weight * self.n + other.total_weight * other.n
         new_self.isotopes = new_self.weights.to_dict()
 
@@ -302,5 +302,5 @@ class CrossSection:
 
         new_self.table = pd.DataFrame(new_table)
         new_self.weights = pd.Series(new_weights)
-        new_self.table["total"] = (new_self.table * new_self.weights).sum(1)
+        new_self.table["total"] = (new_self.table * new_self.weights).sum(1).astype(float)
         return new_self
