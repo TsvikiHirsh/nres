@@ -1,8 +1,9 @@
 # nres
 
-[![Actions Status][actions-badge]][actions-link]
+[![Documentation Status](https://readthedocs.org/projects/nres/badge/?version=latest)](https://nres.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version][pypi-version]][pypi-link]
 [![PyPI platforms][pypi-platforms]][pypi-link]
+
 
 Simple yet powerful package for fitting neutron resonances.
 
