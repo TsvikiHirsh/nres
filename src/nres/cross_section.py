@@ -216,10 +216,53 @@ class CrossSection:
         table.columns = [f"{column}: {weight*100:>6.2f}%" for column, weight in self.weights.items()] + ["total"]
         
         fig, ax = plt.subplots()
-        table.plot(y="total", lw=1.5, ax=ax, color="0.2", zorder=100, **kwargs)
-        table.drop("total", axis=1).plot(ax=ax, title=title, xlabel=xlabel, ylabel=ylabel, lw=lw, **kwargs)
+        table.plot(y="total", linewidth=1.5, ax=ax, color="0.2", zorder=100, **kwargs)
+        table.drop("total", axis=1).plot(ax=ax, title=title, xlabel=xlabel, ylabel=ylabel, linewidth=lw, **kwargs)
         return ax
     
+    def iplot(self, **kwargs):
+        """
+        Plot the cross-section data.
+
+        Args:
+            **kwargs: Optional plotting parameters.
+        """
+        pd.options.plotting.backend = "plotly"
+
+        title = kwargs.pop("title", self.name)
+        ylabel = kwargs.pop("ylabel", "$\sigma$ [barn]")
+        xlabel = kwargs.pop("xlabel", "Energy [eV]")
+
+        table = self.table.mul(np.r_[self.weights, 1.], axis=1)
+        table.columns = [f"{column}: {weight*100:>6.2f}%" for column, weight in self.weights.items()] + ["total"]
+        
+        fig = table.plot(**kwargs)
+        fig.update_layout(title_text=title,
+                          updatemenus=[
+            dict(type="buttons",
+                direction="right",
+                active=0,
+                # x=0.57,
+                # y=1.2,
+                 buttons=list([
+                     dict(label="log-log", 
+                          method="relayout", 
+                          args=[{"xaxis.type": "log","yaxis.type": "log"}]),
+                    dict(label="lin-lin",  
+                          method="relayout", 
+                          args=[{"xaxis.type": "linear","yaxis.type": "linear"}]),
+                     dict(label="lin-log", 
+                          method="relayout", 
+                          args=[{"xaxis.type": "linear","yaxis.type": "log"}]),
+                     dict(label="log-lin",  
+                          method="relayout", 
+                          args=[{"xaxis.type": "log","yaxis.type": "linear"}]),
+
+                                  ]),
+            )])
+        # fig = table.drop("total", axis=1).plot(**kwargs)
+        return fig
+
     @classmethod
     def from_material(cls, mat: Union[str, Dict], short_name: str = "", 
                       total_weight: float = 1., splitby: str = "elements") -> 'CrossSection':
