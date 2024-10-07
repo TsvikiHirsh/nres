@@ -5,6 +5,8 @@ from pathlib import Path
 import shelve
 from tqdm import tqdm
 import requests
+import mendeleev
+import materials_compendium as mc
 
 # Constants
 SPEED_OF_LIGHT = 299792458  # m/s
@@ -40,56 +42,206 @@ def energy2time(energy, flight_path_length):
     return flight_path_length / SPEED_OF_LIGHT * np.sqrt(γ ** 2 / (γ ** 2 - 1))
 
 def materials_dict():
-    import materials_compendium as mc
+    """
+    Generate a dictionary containing information about materials, including their densities, 
+    atomic densities, chemical formulas, and elemental/isotopic compositions.
+
+    The function retrieves material data from the MaterialsCompendium package and organizes 
+    it into a dictionary. Each material's total mass is calculated based on the atomic weights 
+    and weight fractions of its constituent elements. The mass of each element reflects its 
+    actual atomic mass, and the total mass is weighted by element fractions.
+
+    Returns:
+        materials (dict): A dictionary containing information for each material.
+            Example structure:
+            {
+                'MaterialName': {
+                    'name': 'MaterialName',
+                    'density': <density>,  # g/cm³
+                    'n': <atomic_density>,  # atoms per barn
+                    'mass': <total_mass>,   # total mass (g/mol)
+                    'formula': 'ChemicalFormula',
+                    'elements': {
+                        'ElementSymbol': {
+                            'weight': <weight_fraction>,
+                            'mass': <element_atomic_mass>,  # Actual atomic mass of the element (g/mol)
+                            'isotopes': {
+                                'IsotopeName': <isotope_weight_fraction>,
+                                ...
+                            }
+                        }
+                    }
+                },
+                ...
+            }
+    """
     materials = {}
+
     for material in mc.MaterialsCompendium:
         mat_name = material.Name
         density = material.Density
         n = material.MaterialAtomDensity
         formula = material.Formula
+        total_mass = 0.0  # Initialize total weighted mass for the material
+
         elements = {}
+
+        # Process each element in the material
         for element in material.Elements:
             name = element.Element
-            weight = element.WeightFraction_whole
-            elements[name] = {"weight":weight}
+            weight_fraction = element.WeightFraction_whole  # Whole weight fraction of the element
+
+            # Get the actual atomic mass of the element (e.g., 12 for Carbon)
+            element_atomic_mass = element.AtomicMass  # Actual atomic mass (g/mol)
+
+            # Add element to the elements dict with its actual atomic mass
+            elements[name] = {
+                "weight": weight_fraction,
+                "mass": element_atomic_mass  # Actual atomic mass (g/mol)
+            }
+
+            # Calculate isotopic contributions if present
             isotopes = {}
             for isotope in element.Isotopes:
                 iso_name = format_isotope(isotope.Isotope)
                 iso_weight = isotope.WeightFraction
-                if iso_weight>0:
+                if iso_weight > 0:
                     isotopes[iso_name] = iso_weight
-            elements[name]["isotopes"] = isotopes
-        materials[mat_name] = {"name":mat_name,"density":density,"n":n,"formula":formula,"elements":elements}
+
+            # Add isotopic data to the element
+            elements[name]["isotopes"] = isotopes if isotopes else None  # If no isotopes, set None
+
+            # Update total weighted mass for the material by summing element mass contributions weighted by fraction
+            total_mass += element_atomic_mass * weight_fraction
+
+        # Store the material information with calculated total weighted mass
+        materials[mat_name] = {
+            "name": mat_name,
+            "density": density,   # g/cm³
+            "n": n,               # atoms/barn
+            "mass": total_mass,    # Total molar mass (g/mol), weighted by element fractions
+            "formula": formula,
+            "elements": elements   # Each element has its actual atomic mass (g/mol)
+        }
+
     return materials
 
+
+
+
+
 def elements_and_isotopes_dict():
+    """
+    Generate dictionaries containing information about elements and their isotopes.
+
+    The function retrieves element and isotope data from the Mendeleev package and organizes 
+    it into two dictionaries: one for elements and another for isotopes. Each entry includes 
+    details such as the name, atomic density (atoms per barn), total mass, formula, and isotope data.
+
+    Returns:
+        elements (dict): A dictionary containing information for each element.
+            Example structure:
+            {
+                'ElementName': {
+                    'name': 'ElementName',
+                    'n': <atoms_per_barn>,
+                    'mass': <total_mass>,
+                    'formula': 'Symbol',
+                    'density': <density>,
+                    'elements': {
+                        'Symbol': {
+                            'weight': 1,
+                            'isotopes': {
+                                'IsotopeName': <isotope_abundance>,
+                                ...
+                            }
+                        }
+                    }
+                },
+                ...
+            }
+        
+        isotopes (dict): A dictionary containing information for each isotope.
+            Example structure:
+            {
+                'IsotopeName': {
+                    'name': 'IsotopeName',
+                    'n': <atoms_per_barn>,
+                    'mass': <total_mass>,
+                    'formula': 'IsotopeName',
+                    'density': <density>,
+                    'elements': {
+                        'Symbol': {
+                            'weight': 1,
+                            'isotopes': {
+                                'IsotopeName': 1.0
+                            }
+                        }
+                    }
+                },
+                ...
+            }
+    """
     elements = {}
-    import mendeleev
+    isotopes = {}
+
+    # Retrieve all elements from mendeleev
     all_elements = mendeleev.get_all_elements()
+
     for element in all_elements:
         name = element.name
-        elements[name] = {}
-    
-        elements[name]["name"] = name
-        elements[name]["n"] = element.density/element.mass*0.602214076 # atoms/barn
-        elements[name]["formula"] = element.symbol
-        elements[name]["density"] = element.density
-        elements[name]["elements"] = {element.symbol:{"weight":1}}
-        elements[name]["elements"][element.symbol]["isotopes"] = {f"{iso.element.symbol}{iso.mass_number}":iso.abundance*0.01 for iso in element.isotopes if iso.abundance}
+        symbol = element.symbol
 
-    isotopes = {}
-    for element in all_elements:
+        # Calculate atoms per barn and total mass
+        atoms_per_barn = element.density / element.mass * 0.602214076
+        total_mass = element.mass
+
+        # Initialize element entry with name, n (atoms per barn), mass, formula, density
+        elements[name] = {
+            "name": name,
+            "n": atoms_per_barn,
+            "mass": total_mass,
+            "formula": symbol,
+            "density": element.density,
+            "elements": {symbol: {"weight": 1}},
+        }
+
+        # Handle isotopes for each element
+        isotope_dict = {
+            f"{iso.element.symbol}{iso.mass_number}": iso.abundance * 0.01
+            for iso in element.isotopes
+            if iso.abundance is not None and iso.abundance > 0
+        }
+
+        if isotope_dict:
+            elements[name]["elements"][symbol]["isotopes"] = isotope_dict
+
+        # Process isotopes separately
         for iso in element.isotopes:
-            if iso.abundance:
-                name = f"{iso.element.symbol}{iso.mass_number}"
-                isotopes[name] = {}
-                isotopes[name]["name"] = name
-                isotopes[name]["n"] = element.density/iso.mass*0.602214076 # atoms/barn
-                isotopes[name]["formula"] = name
-                isotopes[name]["density"] = element.density
-                isotopes[name]["elements"] = {element.symbol:{"weight":1}}
-                isotopes[name]["elements"][element.symbol]["isotopes"] = {name:1.}
+            if iso.abundance is not None and iso.abundance > 0:
+                iso_name = f"{iso.element.symbol}{iso.mass_number}"
+
+                # Calculate atoms per barn and total mass for isotope
+                iso_atoms_per_barn = element.density / iso.mass * 0.602214076
+                iso_total_mass = iso.mass
+
+                # Add isotope entry
+                isotopes[iso_name] = {
+                    "name": iso_name,
+                    "n": iso_atoms_per_barn,
+                    "mass": iso_total_mass,
+                    "formula": iso_name,
+                    "density": element.density,
+                    "elements": {
+                        symbol: {
+                            "weight": 1,
+                            "isotopes": {iso_name: 1.0}
+                        }
+                    }
+                }
+
     return elements, isotopes
+
 
 
 def format_isotope(isotope_string):
