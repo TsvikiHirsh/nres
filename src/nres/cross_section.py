@@ -86,7 +86,7 @@ class CrossSection:
                 if weight > 0:
                     xs[isotope] = self.__xsdata__[isotope]
                     updated_isotopes[isotope] = weight
-                    self.n = np.NaN
+                    self.n = np.nan
             elif isinstance(isotope, CrossSection):
                 xs[isotope.name] = isotope.table["total"].rename(isotope.name)
                 updated_isotopes[isotope.name] = weight
