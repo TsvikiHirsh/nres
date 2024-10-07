@@ -230,15 +230,15 @@ class CrossSection:
         pd.options.plotting.backend = "plotly"
 
         title = kwargs.pop("title", self.name)
-        ylabel = kwargs.pop("ylabel", "$\sigma$ [barn]")
+        ylabel = kwargs.pop("ylabel", "σ [barn]")
         xlabel = kwargs.pop("xlabel", "Energy [eV]")
         emin = kwargs.pop("emin", 0.1)
-        emax = kwargs.pop("emax", 1e7)
+        emax = kwargs.pop("emax", 2e7)
         scalex = kwargs.pop("scalex", "log")
-        scaley = kwargs.pop("scaley", "linear")
+        scaley = kwargs.pop("scaley", "log")
 
         # Filter the table based on emin and emax
-        filtered_table = self.table.query("@emin < energy < @emax")
+        filtered_table = self.table.query("@emin <= energy <= @emax")
         
         # Apply weights and format column names
         table = filtered_table.mul(np.r_[self.weights, 1.], axis=1)
