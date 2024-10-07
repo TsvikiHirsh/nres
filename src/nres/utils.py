@@ -219,7 +219,7 @@ def elements_and_isotopes_dict():
         # Process isotopes separately
         for iso in element.isotopes:
             if iso.abundance is not None and iso.abundance > 0:
-                iso_name = f"{iso.element.symbol}{iso.mass_number}"
+                iso_name = f"{element.symbol}{iso.mass_number}"
 
                 # Calculate atoms per barn and total mass for isotope
                 iso_atoms_per_barn = element.density / iso.mass * 0.602214076
