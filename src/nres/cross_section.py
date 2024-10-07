@@ -220,15 +220,11 @@ class CrossSection:
         table.drop("total", axis=1).plot(ax=ax, title=title, xlabel=xlabel, ylabel=ylabel, linewidth=lw, **kwargs)
         return ax
     
-    def iplot(self, emin=None, emax=None, scalex="linear", scaley="linear", **kwargs):
+    def iplot(self, **kwargs):
         """
         Plot the cross-section data.
 
         Args:
-            emin (float): Minimum energy to filter the data.
-            emax (float): Maximum energy to filter the data.
-            scalex (str): Scale for the x-axis ("linear" or "log").
-            scaley (str): Scale for the y-axis ("linear" or "log").
             **kwargs: Optional plotting parameters.
         """
         pd.options.plotting.backend = "plotly"
@@ -236,6 +232,10 @@ class CrossSection:
         title = kwargs.pop("title", self.name)
         ylabel = kwargs.pop("ylabel", "$\sigma$ [barn]")
         xlabel = kwargs.pop("xlabel", "Energy [eV]")
+        emin = kwargs.pop("emin", 0.1)
+        emax = kwargs.pop("emax", 1e7)
+        scalex = kwargs.pop("scalex", "log")
+        scaley = kwargs.pop("scaley", "linear")
 
         # Filter the table based on emin and emax
         filtered_table = self.table.query("@emin < energy < @emax")
@@ -250,6 +250,8 @@ class CrossSection:
         fig.update_layout(
             xaxis_type=scalex,
             yaxis_type=scaley,
+            xaxis_title=xlabel,    # Set x-axis label
+            yaxis_title=ylabel,    # Set y-axis label
             title_text=title
         )
 
