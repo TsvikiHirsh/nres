@@ -208,7 +208,7 @@ def elements_and_isotopes_dict():
 
         # Handle isotopes for each element
         isotope_dict = {
-            f"{iso.element.symbol}{iso.mass_number}": iso.abundance * 0.01
+            f"{element.symbol}{iso.mass_number}": iso.abundance * 0.01
             for iso in element.isotopes
             if iso.abundance is not None and iso.abundance > 0
         }
