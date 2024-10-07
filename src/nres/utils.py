@@ -169,7 +169,7 @@ def elements_and_isotopes_dict():
         }
 
         # Add isotopic data if available
-        element_isotopes = {f"{iso.element.symbol}{iso.mass_number}": iso.abundance * 0.01
+        element_isotopes = {f"{element.symbol}{iso.mass_number}": iso.abundance * 0.01
                             for iso in element.isotopes if iso.abundance is not None}
         
         if element_isotopes:
@@ -178,7 +178,7 @@ def elements_and_isotopes_dict():
         # Add isotopes to a separate dictionary
         for iso in element.isotopes:
             if iso.abundance is not None:
-                iso_name = f"{iso.element.symbol}{iso.mass_number}"
+                iso_name = f"{element.symbol}{iso.mass_number}"
                 isotopes[iso_name] = {
                     "name": iso_name,
                     "n": element.density / iso.mass * 0.602214076,  # Atoms/barn for the isotope
