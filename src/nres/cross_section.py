@@ -220,11 +220,15 @@ class CrossSection:
         table.drop("total", axis=1).plot(ax=ax, title=title, xlabel=xlabel, ylabel=ylabel, linewidth=lw, **kwargs)
         return ax
     
-    def iplot(self, **kwargs):
+    def iplot(self, emin=None, emax=None, scalex="linear", scaley="linear", **kwargs):
         """
         Plot the cross-section data.
 
         Args:
+            emin (float): Minimum energy to filter the data.
+            emax (float): Maximum energy to filter the data.
+            scalex (str): Scale for the x-axis ("linear" or "log").
+            scaley (str): Scale for the y-axis ("linear" or "log").
             **kwargs: Optional plotting parameters.
         """
         pd.options.plotting.backend = "plotly"
@@ -233,34 +237,22 @@ class CrossSection:
         ylabel = kwargs.pop("ylabel", "$\sigma$ [barn]")
         xlabel = kwargs.pop("xlabel", "Energy [eV]")
 
-        table = self.table.mul(np.r_[self.weights, 1.], axis=1)
+        # Filter the table based on emin and emax
+        filtered_table = self.table.query("@emin < energy < @emax")
+        
+        # Apply weights and format column names
+        table = filtered_table.mul(np.r_[self.weights, 1.], axis=1)
         table.columns = [f"{column}: {weight*100:>6.2f}%" for column, weight in self.weights.items()] + ["total"]
         
         fig = table.plot(**kwargs)
-        fig.update_layout(title_text=title,
-                          updatemenus=[
-            dict(type="buttons",
-                direction="right",
-                active=0,
-                # x=0.57,
-                # y=1.2,
-                 buttons=list([
-                     dict(label="log-log", 
-                          method="relayout", 
-                          args=[{"xaxis.type": "log","yaxis.type": "log"}]),
-                    dict(label="lin-lin",  
-                          method="relayout", 
-                          args=[{"xaxis.type": "linear","yaxis.type": "linear"}]),
-                     dict(label="lin-log", 
-                          method="relayout", 
-                          args=[{"xaxis.type": "linear","yaxis.type": "log"}]),
-                     dict(label="log-lin",  
-                          method="relayout", 
-                          args=[{"xaxis.type": "log","yaxis.type": "linear"}]),
+        
+        # Set x-axis and y-axis scales
+        fig.update_layout(
+            xaxis_type=scalex,
+            yaxis_type=scaley,
+            title_text=title
+        )
 
-                                  ]),
-            )])
-        # fig = table.drop("total", axis=1).plot(**kwargs)
         return fig
 
     @classmethod
