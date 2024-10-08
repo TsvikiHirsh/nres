@@ -7,6 +7,7 @@ from tqdm import tqdm
 import requests
 import mendeleev
 import materials_compendium as mc
+import pandas as pd
 
 # Constants
 SPEED_OF_LIGHT = 299792458  # m/s
@@ -270,3 +271,26 @@ def download_xsdata():
         print(f"File downloaded and saved to {cache_path}")
     else:
         raise Exception(f"Failed to download the file. Status code: {response.status_code}")
+    
+
+def interpolate(df):
+    # Get underlying NumPy array and index values
+    arr = df.values
+    x = df.index.values  # Use the index values (energy bins) for interpolation
+
+    # Loop through each column and interpolate NaNs using the index as x
+    for j in range(arr.shape[1]):
+        col = arr[:, j]
+        valid_mask = ~np.isnan(col)
+        
+        if valid_mask.sum() > 1:  # Ensure there are at least two non-NaN values
+            x_valid = x[valid_mask]     # Use index values for valid data points
+            y_valid = col[valid_mask]   # Non-NaN values in the column
+            x_nan = x[np.isnan(col)]    # Index values where NaNs are present
+            
+            if len(x_nan) > 0:  # Only interpolate if NaNs exist in the column
+                # Interpolate NaNs using the actual index values
+                col[np.isnan(col)] = np.interp(x_nan, x_valid, y_valid)
+
+    # Return a DataFrame with the interpolated values
+    return pd.DataFrame(arr, index=df.index, columns=df.columns)

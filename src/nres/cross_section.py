@@ -94,7 +94,8 @@ class CrossSection:
                 isotope = isotope.name
 
         self.isotopes = updated_isotopes
-        self.table = pd.DataFrame(xs).interpolate()
+        # self.table = pd.DataFrame(xs).interpolate()
+        self.table = utils.interpolate(pd.DataFrame(xs))
         self.table.index.name = "energy"
 
     def _set_weights(self, weights: Optional[List[float]] = None):
@@ -138,8 +139,11 @@ class CrossSection:
             A new CrossSection object representing the sum of the two.
         """
         all_energies = self.table.index.union(other.table.index)
-        self_interpolated = self.table.reindex(all_energies).interpolate(method='index').drop(columns='total')
-        other_interpolated = other.table.reindex(all_energies).interpolate(method='index').drop(columns='total')
+        # self_interpolated = self.table.reindex(all_energies).interpolate(method='index').drop(columns='total')
+        # other_interpolated = other.table.reindex(all_energies).interpolate(method='index').drop(columns='total')
+
+        self_interpolated = utils.interpolate(self.table.reindex(all_energies)).drop(columns='total')
+        other_interpolated = utils.interpolate(other.table.reindex(all_energies)).drop(columns='total')
 
         combined_weights = (self.weights * self.total_weight).add(
             other.weights * other.total_weight, fill_value=0
