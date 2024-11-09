@@ -3,6 +3,7 @@ import pandas as pd
 from scipy.stats import exponnorm
 import matplotlib.pyplot as plt
 import lmfit
+import inspect
 
 class Response:
     def __init__(self, kind="expo_gauss", vary: bool = False, eps: float = 1.0e-6,
@@ -21,6 +22,7 @@ class Response:
         self.grid = np.arange(-nbins, nbins + 1, 1)
         self.tgrid = self.grid * self.tstep
         self.eps = eps
+        self.params = lmfit.Parameters()
 
         # Choose the response function
         if kind == "expo_gauss":
@@ -33,9 +35,35 @@ class Response:
             )
         elif kind == "none":
             self.function = self.empty_response
-            self.params = lmfit.Parameters()  # Empty parameters
         else:
             raise NotImplementedError(f"Response kind '{kind}' is not supported. Use 'expo_gauss' or 'none'.")
+
+    def register_response(self, response_func, lmfit_params=None, **kwargs):
+        """
+        Registers a new response using any scipy.stats function.
+
+        Parameters:
+        response_func (function): A function from scipy.stats, e.g., exponnorm.pdf.
+        lmfit_params (lmfit.Parameters): Optional lmfit.Parameters to define limits and vary.
+        kwargs: Default parameter values for the response function.
+        """
+        
+
+        # Detect parameters of the response function
+        sig_params = inspect.signature(response_func).parameters
+        for param, default in kwargs.items():
+            if param in sig_params:
+                self.params.add(param, value=default, vary=True)
+            else:
+                raise ValueError(f"Parameter '{param}' not found in the response function signature.")
+            
+        self.function = response_func.pdf(self.tgrid)
+
+        # Use optional lmfit.Parameters to customize limits and vary
+        if lmfit_params:
+            for name, param in lmfit_params.items():
+                if name in self.params:
+                    self.params[name].set(value=param.value, vary=param.vary, min=param.min, max=param.max)
 
     def cut_array_symmetric(self, arr, threshold):
         """
@@ -48,18 +76,16 @@ class Response:
         Returns:
         np.ndarray: Symmetrically cut array with an odd number of elements.
         """
-        # Ensure the array length is odd
         if len(arr) % 2 == 0:
             raise ValueError("Input array length must be odd.")
 
-        # Find center index and symmetric cut points
         center_idx = len(arr) // 2
-        left_idx = np.argmax(arr[:center_idx][::-1] < threshold)  # Reverse search from center
+        left_idx = np.argmax(arr[:center_idx][::-1] < threshold)
         right_idx = np.argmax(arr[center_idx:] < threshold)
         
         left_bound = center_idx - max(left_idx, right_idx)
         right_bound = center_idx + max(left_idx, right_idx) + 1  # Ensure odd length
-        
+
         return arr[left_bound:right_bound]
 
     def empty_response(self, **kwargs):
@@ -95,7 +121,6 @@ class Response:
         ax = kwargs.pop("ax", plt.gca())
         xlabel = kwargs.pop("xlabel", "t [sec]")
 
-        # Use the provided or default parameters
         params = params if params else self.params
         y = self.function(**params.valuesdict())
         tof = np.arange(-len(y) // 2 + 1, len(y) // 2 + 1) * self.tstep
@@ -193,4 +218,4 @@ class Background:
         params = params if params else self.params
         y = self.function(E, **params.valuesdict())
         df = pd.Series(y, index=E, name="Background")
-        df.plot(ax=ax, color=color,ls=ls,**kwargs)
+        df.plot(ax=ax, color=color, ls=ls, **kwargs)
