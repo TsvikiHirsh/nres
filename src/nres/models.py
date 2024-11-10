@@ -165,17 +165,19 @@ class TransmissionModel(lmfit.Model):
 
         # return TransmissionModelResult(fit_result, params or self.params)
         return fit_result
-    
-    def plot(self, data: "nres.Data"=None, plot_bg: bool = True, **kwargs):
+        
+    def plot(self, data: "nres.Data" = None, plot_bg: bool = True, correct_tof: bool = True, **kwargs):
         """
-        Plot the results of the fit.
+        Plot the results of the fit or model.
 
         Parameters
         ----------
-        data : nres.Data, optional - show data alongside the model 
-               (useful before preforming the fit to check the validity of the model and guess parameters)
+        data : nres.Data, optional
+            Show data alongside the model (useful before performing the fit).
         plot_bg : bool, optional
             Whether to include the background in the plot, by default True.
+        correct_tof : bool, optional
+            Apply TOF correction if L0 and t0 parameters are present, by default True.
         kwargs : dict, optional
             Additional plot settings like color, marker size, etc.
 
@@ -183,60 +185,82 @@ class TransmissionModel(lmfit.Model):
         -------
         matplotlib.axes.Axes
             The axes of the plot.
-
-        Notes
-        -----
-        This function generates a plot showing the transmission data, the best-fit curve, 
-        and residuals. If `plot_bg` is True, it will also plot the background function.
         """
-        fig, ax = plt.subplots(2,1,sharex=True,height_ratios=[3.5,1],figsize=(6,5))
-        data_object = data.table.copy()
-        if hasattr(self,"fit_result"):
+        fig, ax = plt.subplots(2, 1, sharex=True, height_ratios=[3.5, 1], figsize=(6, 5))
+        data_object = data.table.copy() if data else None
+
+        if hasattr(self, "fit_result"):
+            # Use fit results
             energy = self.fit_result.userkws["E"]
             data = self.fit_result.data
-            err = 1./self.fit_result.weights
+            err = 1.0 / self.fit_result.weights
             best_fit = self.fit_result.best_fit
             residual = self.fit_result.residual
+            params = self.fit_result.params
+            chi2 = self.fit_result.redchi
             fit_label = "Best fit"
         else:
+            # Use model (no fit yet)
             fit_label = "Model"
-            if data!=None:
+            params = self.params
+            if data is not None:
                 energy = data_object["energy"]
                 data = data_object["trans"]
                 err = data_object["err"]
-                
+                best_fit = self.eval(params=params, E=energy)
+                residual = (data - best_fit) / err
+                # Calculate chi2 for the model
+                chi2 = np.sum(((data - best_fit) / err) ** 2) / (len(data) - len(params))
             else:
                 energy = self.cross_section.table.index
-                data = np.nan*np.ones_like(energy)
-                err = np.nan*np.ones_like(energy)
+                data = np.nan * np.ones_like(energy)
+                err = np.nan * np.ones_like(energy)
+                best_fit = self.eval(params=params, E=energy)
+                residual = np.nan * np.ones_like(energy)
+                chi2 = np.nan
 
-            best_fit = self.eval(params=self.params,E=energy)
-            residual = (data-best_fit)/err
-        color = kwargs.pop("color","seagreen")
-        ecolor = kwargs.pop("ecolor","0.8")
-        ms = kwargs.pop("ms",2)
-        ax[0].errorbar(energy,data,err,marker="o",color=color,ms=ms,zorder=-1,ecolor=ecolor,label=fit_label)  
-        ax[0].plot(energy,best_fit,color="0.2",label="Data") 
+        # Apply TOF correction if enabled and L0, t0 parameters are present
+        if correct_tof and "L0" in params and "t0" in params:
+            L0 = params["L0"].value
+            t0 = params["t0"].value
+            energy = self._tof_correction(energy, L0=L0, t0=t0)
+
+        # Plot settings
+        color = kwargs.pop("color", "seagreen")
+        ecolor = kwargs.pop("ecolor", "0.8")
+        ms = kwargs.pop("ms", 2)
+
+        # Plot data and best-fit/model
+        ax[0].errorbar(energy, data, err, marker="o", color=color, ms=ms, zorder=-1, ecolor=ecolor, label="Data")
+        ax[0].plot(energy, best_fit, color="0.2", label=fit_label)
         ax[0].set_ylabel("Transmission")
         ax[0].set_title(self.cross_section.name)
-        ax[1].plot(energy,residual,color=color)
+
+        # Plot residuals
+        ax[1].plot(energy, residual, color=color)
         ax[1].set_ylabel("Residuals [1σ]")
-        ax[1].set_xlabel("Energy [eV]")
+        ax[1].set_xlabel("Energy [eV]" )
+
+        # Plot background if requested
         if plot_bg and self.background.params:
-            if hasattr(self,"fit_result"):
-                self.background.plot(E=energy,ax=ax[0],params=self.fit_result.params,**kwargs)
-                ax[0].legend([fit_label,"Background","Data"], fontsize=9,reverse=True,title=f"χ$^2$: {self.fit_result.redchi:.2f}")
-            else:
-                self.background.plot(E=energy,ax=ax[0],params=self.params,**kwargs)
-                ax[0].legend([fit_label,"Background","Data"], fontsize=9,reverse=True)                
+            self.background.plot(E=energy, ax=ax[0], params=params, **kwargs)
+            legend_labels = [fit_label, "Background", "Data"]
         else:
-            if hasattr(self,"fit_result"):
-                ax[0].legend([fit_label,"Data"], fontsize=9,reverse=True,title=f"χ$^2$: {self.fit_result.redchi:.2f}")
-            else:
-                ax[0].legend([fit_label,"Data"], fontsize=9,reverse=True)
+            legend_labels = [fit_label, "Data"]
+
+        # Set legend with chi2 value
+        ax[0].legend(
+            legend_labels,
+            fontsize=9,
+            reverse=True,
+            title=f"χ$^2$: {chi2:.2f}"
+        )
+
         plt.subplots_adjust(hspace=0.05)
-        
         return ax
+
+
+
     
     def _make_tof_params(self, vary: bool = False, t0: float = 0., L0: float = 1.):
         """
