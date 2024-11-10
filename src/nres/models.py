@@ -166,12 +166,14 @@ class TransmissionModel(lmfit.Model):
         # return TransmissionModelResult(fit_result, params or self.params)
         return fit_result
     
-    def plot(self, plot_bg: bool = True, **kwargs):
+    def plot(self, data: "nres.Data"=None, plot_bg: bool = True, **kwargs):
         """
         Plot the results of the fit.
 
         Parameters
         ----------
+        data : nres.Data, optional - show data alongside the model 
+               (useful before preforming the fit to check the validity of the model and guess parameters)
         plot_bg : bool, optional
             Whether to include the background in the plot, by default True.
         kwargs : dict, optional
@@ -188,15 +190,32 @@ class TransmissionModel(lmfit.Model):
         and residuals. If `plot_bg` is True, it will also plot the background function.
         """
         fig, ax = plt.subplots(2,1,sharex=True,height_ratios=[3.5,1],figsize=(6,5))
-        energy = self.fit_result.userkws["E"]
-        data = self.fit_result.data
-        err = 1./self.fit_result.weights
-        best_fit = self.fit_result.best_fit
-        residual = self.fit_result.residual
+        data_object = data.table.copy()
+        if hasattr(self,"fit_result"):
+            energy = self.fit_result.userkws["E"]
+            data = self.fit_result.data
+            err = 1./self.fit_result.weights
+            best_fit = self.fit_result.best_fit
+            residual = self.fit_result.residual
+            fit_label = "Best fit"
+        else:
+            fit_label = "Model"
+            if data!=None:
+                energy = data_object["energy"]
+                data = data_object["trans"]
+                err = data_object["err"]
+                
+            else:
+                energy = self.cross_section.table.index
+                data = np.nan*np.ones_like(energy)
+                err = np.nan*np.ones_like(energy)
+
+            best_fit = self.eval(params=self.params,E=energy)
+            residual = (data-best_fit)/err
         color = kwargs.pop("color","seagreen")
         ecolor = kwargs.pop("ecolor","0.8")
         ms = kwargs.pop("ms",2)
-        ax[0].errorbar(energy,data,err,marker="o",color=color,ms=ms,zorder=-1,ecolor=ecolor,label="Best fit")  
+        ax[0].errorbar(energy,data,err,marker="o",color=color,ms=ms,zorder=-1,ecolor=ecolor,label=fit_label)  
         ax[0].plot(energy,best_fit,color="0.2",label="Data") 
         ax[0].set_ylabel("Transmission")
         ax[0].set_title(self.cross_section.name)
@@ -204,10 +223,17 @@ class TransmissionModel(lmfit.Model):
         ax[1].set_ylabel("Residuals [1σ]")
         ax[1].set_xlabel("Energy [eV]")
         if plot_bg and self.background.params:
-            self.background.plot(E=energy,ax=ax[0],params=self.fit_result.params,**kwargs)
-            ax[0].legend(["Best fit","Background","Data"], fontsize=9,reverse=True,title=f"χ$^2$: {self.fit_result.redchi:.2f}")
+            if hasattr(self,"fit_result"):
+                self.background.plot(E=energy,ax=ax[0],params=self.fit_result.params,**kwargs)
+                ax[0].legend([fit_label,"Background","Data"], fontsize=9,reverse=True,title=f"χ$^2$: {self.fit_result.redchi:.2f}")
+            else:
+                self.background.plot(E=energy,ax=ax[0],params=self.params,**kwargs)
+                ax[0].legend([fit_label,"Background","Data"], fontsize=9,reverse=True)                
         else:
-            ax[0].legend(["Best fit","Data"], fontsize=9,reverse=True,title=f"χ$^2$: {self.fit_result.redchi:.2f}")
+            if hasattr(self,"fit_result"):
+                ax[0].legend([fit_label,"Data"], fontsize=9,reverse=True,title=f"χ$^2$: {self.fit_result.redchi:.2f}")
+            else:
+                ax[0].legend([fit_label,"Data"], fontsize=9,reverse=True)
         plt.subplots_adjust(hspace=0.05)
         
         return ax
