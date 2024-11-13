@@ -187,7 +187,7 @@ class TransmissionModel(lmfit.Model):
             The axes of the plot.
         """
         fig, ax = plt.subplots(2, 1, sharex=True, height_ratios=[3.5, 1], figsize=(6, 5))
-        data_object = data.table.copy() if data else None
+        data_object = data.table.dropna().copy() if data else None
 
         if hasattr(self, "fit_result"):
             # Use fit results
@@ -207,12 +207,12 @@ class TransmissionModel(lmfit.Model):
                 energy = data_object["energy"]
                 data = data_object["trans"]
                 err = data_object["err"]
-                best_fit = self.eval(params=params, E=energy)
+                best_fit = self.eval(params=params, E=energy.values)
                 residual = (data - best_fit) / err
                 # Calculate chi2 for the model
                 chi2 = np.sum(((data - best_fit) / err) ** 2) / (len(data) - len(params))
             else:
-                energy = self.cross_section.table.index
+                energy = self.cross_section.table.dropna().index.values
                 data = np.nan * np.ones_like(energy)
                 err = np.nan * np.ones_like(energy)
                 best_fit = self.eval(params=params, E=energy)
