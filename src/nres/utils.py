@@ -90,7 +90,7 @@ def materials_dict():
         # Process each element in the material
         for element in material.Elements:
             name = element.Element
-            weight_fraction = element.WeightFraction_whole  # Whole weight fraction of the element
+            weight_fraction = element.AtomFraction_whole  # Whole weight fraction of the element
 
             # Get the actual atomic mass of the element (e.g., 12 for Carbon)
             element_atomic_mass = element.AtomicMass  # Actual atomic mass (g/mol)
@@ -105,7 +105,7 @@ def materials_dict():
             isotopes = {}
             for isotope in element.Isotopes:
                 iso_name = format_isotope(isotope.Isotope)
-                iso_weight = isotope.WeightFraction
+                iso_weight = isotope.AtomFraction
                 if iso_weight > 0:
                     isotopes[iso_name] = iso_weight
 
