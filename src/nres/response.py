@@ -225,6 +225,7 @@ class Background:
         ls = kwargs.pop("ls", "--")
         color = kwargs.pop("color", "0.5")
         params = params if params else self.params
-        y = self.function(E, **params.valuesdict())
+        k = params.valuesdict().get("k",1.)
+        y = k*self.function(E, **params.valuesdict())
         df = pd.Series(y, index=E, name="Background")
         df.plot(ax=ax, color=color, ls=ls, **kwargs)
