@@ -48,7 +48,7 @@ class TransmissionModel(lmfit.Model):
         """
         super().__init__(self.transmission, **kwargs)
 
-        self.cross_section = cross_section
+        self.cross_section = deepcopy(cross_section)
 
         self.params = self.make_params()
         if vary_weights is not None:
