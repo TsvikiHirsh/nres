@@ -7,7 +7,7 @@ from nres.data import Data
 import pandas
 import matplotlib.pyplot as plt
 from copy import deepcopy 
-from typing import List, Optional
+from typing import List, Optional, Union
 
 
 class TransmissionModel(lmfit.Model):
@@ -167,6 +167,7 @@ class TransmissionModel(lmfit.Model):
 
         # return TransmissionModelResult(fit_result, params or self.params)
         return fit_result
+    
         
     def plot(self, data: "nres.Data" = None, plot_bg: bool = True, correct_tof: bool = True, **kwargs):
         """
@@ -433,4 +434,84 @@ class TransmissionModel(lmfit.Model):
         dtof = (1.0 - L0) * tof + t0
         E = utils.time2energy(tof + dtof, self.cross_section.L)
         return E
+    
 
+    def manually_calibrate_tof(self,
+                                inputs: Union[list, np.ndarray] = None,
+                                references: Union[list, np.ndarray] = None,
+                                input_type: str = 'tof',
+                                reference_type: str = 'energy',
+                                **kwargs):
+        """
+        Manually calibrate time-of-flight (TOF) correction parameters.
+
+        Parameters
+        ----------
+        inputs : list or np.ndarray
+            Input values for calibration (time-like values).
+        references : list or np.ndarray
+            Corresponding reference values for calibration (energy-like values).
+        input_type : str, optional
+            Type of input values. Options are:
+            - 'tof': Direct time values in units of seconds
+            - 'energy': Convert energy to time using utils.energy2time
+            - 'slice': Convert slice indices to time by multiplying with tstep
+            Default is 'tof'.
+        reference_type : str, optional
+            Type of reference values. Options are:
+            - 'tof': Direct time values in units of seconds
+            - 'energy': Convert energy to time using utils.energy2time
+            - 'slice': Convert slice indices to time by multiplying with tstep
+            Default is 'energy'.
+        Returns
+        -------
+        lmfit ModelResult object
+            Detailed linear regression result with fitting information
+        """
+        # Input validation
+        if inputs is None or references is None:
+            raise ValueError("Both inputs and references must be provided")
+        
+        # Convert inputs to numpy arrays
+        inputs = np.array(inputs, dtype=float)
+        references = np.array(references, dtype=float)
+        
+        # Validate input lengths
+        if len(inputs) != len(references):
+            raise ValueError("Input values and reference values must have the same length")
+        
+        # Convert input values based on input_type
+        if input_type == 'energy':
+            inputs = utils.energy2time(inputs, self.cross_section.L)
+        elif input_type == 'slice':
+            inputs = inputs * self.cross_section.tstep
+        elif input_type != 'tof':
+            raise ValueError("Invalid input_type. Must be 'tof', 'energy', or 'slice'")
+        
+        # Convert reference values based on input_type
+        if reference_type == 'energy':
+            references = utils.energy2time(references, self.cross_section.L)
+        elif reference_type == 'slice':
+            references = references * self.cross_section.tstep
+        elif reference_type != 'tof':
+            raise ValueError("Invalid reference_type. Must be 'tof', 'energy', or 'slice'")
+        
+        # Define the linear model using lmfit
+        def linear_tof_correction(x, L0=1., t0=0.):
+            return L0 * x + t0
+        
+        # Create the model
+        model = lmfit.Model(linear_model)
+        params = model.make_params()
+
+        if len(inputs)==1:
+            params["L0"].vary = False
+        
+        # Perform the fit
+        result = model.fit(inputs, params=params,x=references)
+        
+        # Update self.params with the calibration results
+        self.params.set(t0=dict(value=result.params['t0'].value, vary=False))
+        self.params.set(L0=dict(value=result.params['L0'].value, vary=False))
+        
+        return result
