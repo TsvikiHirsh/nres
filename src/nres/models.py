@@ -501,7 +501,7 @@ class TransmissionModel(lmfit.Model):
             return L0 * x + t0
         
         # Create the model
-        model = lmfit.Model(linear_model)
+        model = lmfit.Model(linear_tof_correction)
         params = model.make_params()
 
         if len(inputs)==1:
