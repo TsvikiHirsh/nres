@@ -230,6 +230,7 @@ class TransmissionModel(lmfit.Model):
 
         # Plot settings
         color = kwargs.pop("color", "seagreen")
+        title = kwargs.pop("title", self.cross_section.name)
         ecolor = kwargs.pop("ecolor", "0.8")
         ms = kwargs.pop("ms", 2)
 
@@ -237,7 +238,7 @@ class TransmissionModel(lmfit.Model):
         ax[0].errorbar(energy, data, err, marker="o", color=color, ms=ms, zorder=-1, ecolor=ecolor, label="Data")
         ax[0].plot(energy, best_fit, color="0.2", label=fit_label)
         ax[0].set_ylabel("Transmission")
-        ax[0].set_title(self.cross_section.name)
+        ax[0].set_title(title)
 
         # Plot residuals
         ax[1].plot(energy, residual, color=color)
