@@ -164,6 +164,7 @@ class TransmissionModel(lmfit.Model):
         # switch method names
         fit_result.plot_results = deepcopy(fit_result.plot)
         fit_result.plot = self.plot
+        fit_result.weighted_thickness = self.weighted_thickness
 
         # return TransmissionModelResult(fit_result, params or self.params)
         return fit_result
@@ -263,7 +264,22 @@ class TransmissionModel(lmfit.Model):
         plt.subplots_adjust(hspace=0.05)
         return ax
 
+    def weighted_thickness(self,params=None):
+        """Returns the weighted thickness in [cm]
 
+        Args:
+            params (lmfit.Parameters, optional): parameters object. Defaults to None.
+        """
+
+        weights = self.cross_section.weights
+        if hasattr(self,"fit_result"):
+            thickness = self.fit_result.values["thickness"]
+        else:
+            thickness = self.params["thickness"].value
+        return thickness * weights
+
+
+        
 
     
     def _make_tof_params(self, vary: bool = False, t0: float = 0., L0: float = 1.):
