@@ -295,16 +295,18 @@ def interpolate(df):
     # Return a DataFrame with the interpolated values
     return pd.DataFrame(arr, index=df.index, columns=df.columns)
 
-def register_material(name, components, fractions=None, fraction_type='atomic', formula=None):
+def register_material(name, components, fractions=None, fraction_type='atomic', density=None, formula=None):
     """
     Register a new material with specified components and their fractions.
 
     Args:
         name (str): Name of the material
-        components (list or dict): List of element/isotope names or dictionary of components and fractions
+        components (list or dict or any): List of element/isotope names, dictionary of components and fractions, 
+            or material/element/isotope dict entries
         fractions (list, optional): Corresponding fractions for each component if components is a list
         fraction_type (str, optional): Type of fractions provided. 
             Can be 'atomic' or 'weight'. Defaults to 'atomic'.
+        density (float, optional): density of the new material [g/cm3]
         formula (str, optional): Custom chemical formula for the material
 
     Returns:
@@ -313,11 +315,19 @@ def register_material(name, components, fractions=None, fraction_type='atomic', 
     Raises:
         ValueError: For invalid inputs or fraction-related inconsistencies
     """
+    # Avogadro's number (atoms/mol)
+    AVOGADRO = 6.02214076e23
+    
     # Load materials cache
     materials, elements, isotopes = load_or_create_materials_cache()
 
     # Handle dictionary input for components
     if isinstance(components, dict):
+        # Check if it's a predefined material/element/isotope entry
+        if all(key in components for key in ['name', 'elements', 'mass']):
+            # If it's an existing material/element/isotope entry, use its name
+            return components
+        
         # Normalize dictionary input
         fractions = list(components.values())
         components = list(components.keys())
@@ -327,8 +337,11 @@ def register_material(name, components, fractions=None, fraction_type='atomic', 
     # Resolve component names (potentially from formulas)
     resolved_components = []
     for comp in components:
+        # Check if component is an existing material/element/isotope entry
+        if isinstance(comp, dict) and all(key in comp for key in ['name', 'elements', 'mass']):
+            resolved_components.append(comp['name'])
         # Check if component is a formula that exists in materials
-        if comp in materials:
+        elif comp in materials:
             resolved_components.append(comp)
         elif comp in elements or comp in isotopes:
             resolved_components.append(comp)
@@ -377,14 +390,15 @@ def register_material(name, components, fractions=None, fraction_type='atomic', 
     # Build material dictionary
     material = {
         'name': name,
-        'density': None,  # User can set later
-        'n': None,  # User can set later
+        'density': density,  # User can set later
+        'n': None,  # Will be calculated
         'mass': None,  # Will be calculated
         'formula': formula,
         'elements': {}
     }
     
     total_mass = 0
+    total_n = 0
     
     # Process each component
     for comp, atomic_frac in zip(resolved_components, atomic_fractions):
@@ -398,8 +412,9 @@ def register_material(name, components, fractions=None, fraction_type='atomic', 
                 else:
                     material['elements'][elem]['weight'] += elem_info.get('weight', 0) * atomic_frac
                 
-                # Update total mass
+                # Update total mass and n
                 total_mass += elem_info['mass'] * elem_info.get('weight', 0) * atomic_frac
+                total_n += materials[comp].get('n', 0) * atomic_frac
         
         # Handle individual elements
         elif comp in elements:
@@ -408,8 +423,9 @@ def register_material(name, components, fractions=None, fraction_type='atomic', 
             element_info['weight'] = atomic_frac
             material['elements'][comp] = element_info
             
-            # Update total mass
+            # Update total mass and n
             total_mass += element_info['mass'] * atomic_frac
+            total_n += elements[comp].get('n', 0) * atomic_frac
         
         # Handle isotopes
         elif comp in isotopes:
@@ -429,10 +445,19 @@ def register_material(name, components, fractions=None, fraction_type='atomic', 
             material['elements'][parent_element]['isotopes'][comp] = atomic_frac
             material['elements'][parent_element]['weight'] += atomic_frac
             
-            # Update total mass
+            # Update total mass and n
             total_mass += isotope_info['mass'] * atomic_frac
+            total_n += isotopes[comp].get('n', 0) * atomic_frac
     
     # Set final material mass
     material['mass'] = total_mass
+    
+    # Calculate n (atomic density)
+    if density is not None:
+        # n = (density / mass) * Avogadro * 1e-24
+        material['n'] = (density / total_mass) * AVOGADRO * 1e-24
+    else:
+        # Use the weighted average of component n values
+        material['n'] = total_n
     
     return material
