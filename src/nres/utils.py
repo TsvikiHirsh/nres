@@ -294,3 +294,145 @@ def interpolate(df):
 
     # Return a DataFrame with the interpolated values
     return pd.DataFrame(arr, index=df.index, columns=df.columns)
+
+def register_material(name, components, fractions=None, fraction_type='atomic', formula=None):
+    """
+    Register a new material with specified components and their fractions.
+
+    Args:
+        name (str): Name of the material
+        components (list or dict): List of element/isotope names or dictionary of components and fractions
+        fractions (list, optional): Corresponding fractions for each component if components is a list
+        fraction_type (str, optional): Type of fractions provided. 
+            Can be 'atomic' or 'weight'. Defaults to 'atomic'.
+        formula (str, optional): Custom chemical formula for the material
+
+    Returns:
+        dict: A material dictionary consistent with the materials database format
+
+    Raises:
+        ValueError: For invalid inputs or fraction-related inconsistencies
+    """
+    # Load materials cache
+    materials, elements, isotopes = load_or_create_materials_cache()
+
+    # Handle dictionary input for components
+    if isinstance(components, dict):
+        # Normalize dictionary input
+        fractions = list(components.values())
+        components = list(components.keys())
+    elif fractions is None:
+        raise ValueError("Fractions must be provided either as a separate list or as dictionary values")
+
+    # Resolve component names (potentially from formulas)
+    resolved_components = []
+    for comp in components:
+        # Check if component is a formula that exists in materials
+        if comp in materials:
+            resolved_components.append(comp)
+        elif comp in elements or comp in isotopes:
+            resolved_components.append(comp)
+        else:
+            raise ValueError(f"Component {comp} not found in materials, elements, or isotopes")
+
+    # Normalize fractions
+    total_frac = sum(fractions)
+    normalized_fractions = [frac / total_frac for frac in fractions]
+
+    # Input validation
+    if len(resolved_components) != len(normalized_fractions):
+        raise ValueError("Number of components must match number of fractions")
+
+    # Conversion to atomic fractions if needed
+    if fraction_type == 'weight':
+        # Calculate atomic fractions from weight fractions
+        atomic_fractions = []
+        for comp, frac in zip(resolved_components, normalized_fractions):
+            # Determine mass based on element, isotope, or material
+            if comp in materials:
+                mass = materials[comp]['mass']
+            elif comp in elements:
+                mass = elements[comp]['mass']
+            else:
+                mass = isotopes[comp]['mass']
+            
+            atomic_fractions.append(frac / mass)
+        
+        # Normalize to ensure sum of atomic fractions is 1
+        total_atomic_frac = sum(atomic_fractions)
+        atomic_fractions = [frac / total_atomic_frac for frac in atomic_fractions]
+    else:
+        # Already atomic fractions, just ensure they are normalized
+        atomic_fractions = normalized_fractions
+
+    # Generate formula if not provided
+    if formula is None:
+        # Create a formula from components and their fractions
+        formula_parts = []
+        for comp, frac in zip(resolved_components, atomic_fractions):
+            # Round fraction to 2 decimal places for readability
+            formula_parts.append(f"{comp}_{frac:.2f}")
+        formula = '_'.join(formula_parts)
+
+    # Build material dictionary
+    material = {
+        'name': name,
+        'density': None,  # User can set later
+        'n': None,  # User can set later
+        'mass': None,  # Will be calculated
+        'formula': formula,
+        'elements': {}
+    }
+    
+    total_mass = 0
+    
+    # Process each component
+    for comp, atomic_frac in zip(resolved_components, atomic_fractions):
+        # Handle material as a component (if it exists in materials)
+        if comp in materials:
+            # If a material is used as a component, merge its elements
+            for elem, elem_info in materials[comp]['elements'].items():
+                if elem not in material['elements']:
+                    material['elements'][elem] = elem_info.copy()
+                    material['elements'][elem]['weight'] = elem_info.get('weight', 0) * atomic_frac
+                else:
+                    material['elements'][elem]['weight'] += elem_info.get('weight', 0) * atomic_frac
+                
+                # Update total mass
+                total_mass += elem_info['mass'] * elem_info.get('weight', 0) * atomic_frac
+        
+        # Handle individual elements
+        elif comp in elements:
+            # Standard element
+            element_info = elements[comp].copy()
+            element_info['weight'] = atomic_frac
+            material['elements'][comp] = element_info
+            
+            # Update total mass
+            total_mass += element_info['mass'] * atomic_frac
+        
+        # Handle isotopes
+        elif comp in isotopes:
+            # Specific isotope
+            isotope_info = isotopes[comp].copy()
+            parent_element = comp[:2]  # Extract element symbol
+            
+            # If parent element not in material, add it
+            if parent_element not in material['elements']:
+                material['elements'][parent_element] = {
+                    'weight': 0,
+                    'mass': elements[parent_element]['mass'],
+                    'isotopes': {}
+                }
+            
+            # Update isotope information
+            material['elements'][parent_element]['isotopes'][comp] = atomic_frac
+            material['elements'][parent_element]['weight'] += atomic_frac
+            
+            # Update total mass
+            total_mass += isotope_info['mass'] * atomic_frac
+    
+    # Set final material mass
+    material['mass'] = total_mass
+    
+    return material

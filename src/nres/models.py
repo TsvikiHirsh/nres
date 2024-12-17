@@ -107,7 +107,8 @@ class TransmissionModel(lmfit.Model):
 
         response = self.response.function(**kwargs)
 
-        weights = [kwargs.pop(key.replace("_",""),val) for key,val in self.cross_section.weights.items()]
+        weights = deepcopy(self.cross_section.weights)
+        weights = [kwargs.pop(key.replace("_",""),val) for key,val in weights.items()]
 
         bg = self.background.function(E,**kwargs)
 
@@ -149,17 +150,18 @@ class TransmissionModel(lmfit.Model):
         then fits the transmission model to the filtered data.
         """
         # self.cross_section.set_energy_range(emin,emax)
+        params = deepcopy(params or self.params)
         if isinstance(data,pandas.DataFrame):
             data = data.query(f"{emin}<energy<{emax}")
             weights = kwargs.get("weights",1./data["err"].values)
-            fit_result = super().fit(data["trans"].values, params=params or self.params, weights=weights, E=data["energy"].values, **kwargs)
+            fit_result = super().fit(data["trans"].values, params=params, weights=weights, E=data["energy"].values, **kwargs)
         elif isinstance(data,Data):
             data = data.table.query(f"{emin}<energy<{emax}")
             weights = kwargs.get("weights",1./data["err"].values)
-            fit_result = super().fit(data["trans"].values, params=params or self.params, weights=weights, E=data["energy"].values, **kwargs)
+            fit_result = super().fit(data["trans"].values, params=params, weights=weights, E=data["energy"].values, **kwargs)
         else:
             # Perform the fit using the parent class's fit method
-            fit_result = super().fit(data, params=params or self.params, **kwargs)
+            fit_result = super().fit(data, params=params, **kwargs)
         self.fit_result = fit_result
         # switch method names
         fit_result.plot_results = deepcopy(fit_result.plot)
