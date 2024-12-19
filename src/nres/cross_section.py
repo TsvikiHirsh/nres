@@ -290,10 +290,17 @@ class CrossSection:
         ], keys=['self', 'other'], axis=1)
 
         new_self = deepcopy(self)
-        new_self.table = (
-            interpolated.mul(pd.concat([self.weights, other.weights], keys=['self', 'other']))
-            .stack(0).groupby(level=0).sum()
-        )
+        try:
+            # Try new pandas style first
+            new_self.table = (
+                interpolated.mul(pd.concat([self.weights, other.weights], keys=['self', 'other']))
+                .stack(0, future_stack=True).groupby(level=0).sum()
+            )
+        except TypeError:  # Older pandas versions won't recognize future_stack parameter
+            new_self.table = (
+                interpolated.mul(pd.concat([self.weights, other.weights], keys=['self', 'other']))
+                .stack(0).groupby(level=0).sum()
+            )
 
         # Update attributes for the combined CrossSection
         new_self.weights = combined_weights
