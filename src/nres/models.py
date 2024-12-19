@@ -48,7 +48,7 @@ class TransmissionModel(lmfit.Model):
         """
         super().__init__(self.transmission, **kwargs)
 
-        self.cross_section = deepcopy(cross_section)
+        self.cross_section = CrossSection(cross_section)
 
         self.params = self.make_params()
         if vary_weights is not None:
@@ -341,7 +341,7 @@ class TransmissionModel(lmfit.Model):
             # Add (N-1) free parameters corresponding to the first (N-1) items
             for i, name in enumerate(param_names[:-1]):
                 initial_value = weights[i]  # Use weight values
-                params.add(f'p{i+1}',value=np.log(weights[i]/last_weight),min=-14,max=14) # limit to 1ppm
+                params.add(f'p{i+1}',value=np.log(weights[i]/last_weight),min=-14,max=14,vary=vary) # limit to 1ppm
             
             # Define the normalization expression
             normalization_expr = ' + '.join([f'exp(p{i+1})' for i in range(N-1)])
