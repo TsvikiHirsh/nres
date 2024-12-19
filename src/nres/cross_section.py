@@ -27,7 +27,7 @@ class CrossSection:
         total_weight (float): Total weight of the cross-section.
     """
 
-    def __init__(self, isotopes: Dict[Union[str, 'CrossSection'], float] = None, 
+    def __init__(self, isotopes: Dict[Union[str, 'CrossSection'], float] | 'CrossSection' = None, 
                  name: str = "", 
                  total_weight: float = 1.,
                  L: float = 10.59,
@@ -38,7 +38,8 @@ class CrossSection:
         Initialize the CrossSection class.
 
         Args:
-            isotopes: Dictionary of isotope names or CrossSection objects and their weights.
+            isotopes: Dictionary of isotope names or CrossSection objects and their weights,
+                     or an existing CrossSection object to copy from.
             name: Name of the combined cross-section.
             total_weight: Total weight of the cross-section.
             L: Flight path length [m].
@@ -46,6 +47,37 @@ class CrossSection:
             tbins: Number of time bins.
             first_tbin: Index of the first time bin.
         """
+        # Handle initialization from another CrossSection object
+        if isinstance(isotopes, CrossSection):
+            self._init_from_cross_section(isotopes, name)
+        else:
+            self._init_new(isotopes, name, total_weight, L, tstep, tbins, first_tbin)
+
+    def _init_from_cross_section(self, other: 'CrossSection', name: str = ""):
+        """Initialize this CrossSection by copying from another CrossSection object."""
+        self.isotopes = other.isotopes.copy()
+        self.name = name if name else f"{other.name}"
+        self.total_weight = other.total_weight
+        self.L = other.L
+        self.tstep = other.tstep
+        self.tbins = other.tbins
+        self.first_tbin = other.first_tbin
+        self.tgrid = other.tgrid.copy()
+        self.n = other.n
+        self.__xsdata__ = other.__xsdata__
+        
+        # Deep copy the table and weights to ensure independence
+        self.table = other.table.copy()
+        self.weights = other.weights.copy()
+
+    def _init_new(self, isotopes: Dict[Union[str, 'CrossSection'], float] = None,
+                  name: str = "", 
+                  total_weight: float = 1.,
+                  L: float = 10.59,
+                  tstep: float = 1.56255e-9,
+                  tbins: int = 640,
+                  first_tbin: int = 1):
+        """Initialize a new CrossSection with the given parameters."""
         self.isotopes = isotopes or {}
         self.name = name
         self.total_weight = total_weight if self.isotopes else 0.
@@ -53,7 +85,7 @@ class CrossSection:
         self.tstep = tstep
         self.tbins = tbins
         self.first_tbin = first_tbin
-        self.tgrid = np.arange(self.first_tbin,self.tbins+1,1)*self.tstep
+        self.tgrid = np.arange(self.first_tbin, self.tbins+1, 1) * self.tstep
 
         self.__xsdata__ = None
         self._load_xsdata()
