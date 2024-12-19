@@ -1,8 +1,13 @@
 # nres
 
+<p align="center">
+  <img src="docs/source/_static/nres_logo.png" alt="nres logo" width="200"/>
+</p>
+
+
 [![Documentation Status](https://readthedocs.org/projects/nres/badge/?version=latest)](https://nres.readthedocs.io/en/latest/?badge=latest)
-[![PyPI version][pypi-version]][pypi-link]
-[![PyPI platforms][pypi-platforms]][pypi-link]
+<!-- [![PyPI version][pypi-version]][pypi-link]
+[![PyPI platforms][pypi-platforms]][pypi-link] -->
 
 
 Simple yet powerful package for fitting neutron resonances.
@@ -73,7 +78,7 @@ For questions, issues, or contributions, please visit the [GitHub repository](ht
 <!-- prettier-ignore-start -->
 [actions-badge]:            https://github.com/TsvikiHirsh/nres/workflows/CI/badge.svg
 [actions-link]:             https://github.com/TsvikiHirsh/nres/actions
-[pypi-link]:                https://pypi.org/project/nres/
+<!-- [pypi-link]:                https://pypi.org/project/nres/
 [pypi-platforms]:           https://img.shields.io/pypi/pyversions/nres
-[pypi-version]:             https://img.shields.io/pypi/v/nres
+[pypi-version]:             https://img.shields.io/pypi/v/nres -->
 <!-- prettier-ignore-end -->
