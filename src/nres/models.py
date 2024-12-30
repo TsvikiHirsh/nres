@@ -278,14 +278,13 @@ class TransmissionModel(lmfit.Model):
         """
 
         weights = self.cross_section.weights
-        if hasattr(self,"fit_result"):
+        if params:
+            thickness = params["thickness"].value
+        elif hasattr(self,"fit_result"):
             thickness = self.fit_result.values["thickness"]
         else:
             thickness = self.params["thickness"].value
         return thickness * weights
-
-
-        
 
     
     def _make_tof_params(self, vary: bool = False, t0: float = 0., L0: float = 1.):
