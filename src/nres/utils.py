@@ -232,9 +232,9 @@ def get_cache_path():
     return cache_dir
 
 def load_or_create_materials_cache():
-    cache_path = get_cache_path() / "materials.db"
+    data_path = Path(__file__).parent / "data" / "nres_materials.json"
     
-    if cache_path.exists():
+    if data_path.exists():
         with shelve.open(str(cache_path.with_suffix(""))) as fid:
             materials = fid.get("materials")
             elements = fid.get("elements")
@@ -289,26 +289,36 @@ def download_xsdata():
     else:
         raise Exception(f"Failed to download the file. Status code: {response.status_code}")
     
-
 def interpolate(df):
+    """
+    Interpolate NaN values in a DataFrame or Series.
+    
+    Args:
+        df: DataFrame or Series to interpolate
+    Returns:
+        DataFrame or Series with interpolated values
+    """
+    if isinstance(df, pd.Series):
+        return interpolate(pd.DataFrame(df)).iloc[:, 0]
+        
     # Get underlying NumPy array and index values
-    arr = df.values
-    x = df.index.values  # Use the index values (energy bins) for interpolation
-
+    arr = df.values.copy()  # Make a copy to avoid modifying original
+    x = df.index.values     # Use the index values (energy bins) for interpolation
+    
     # Loop through each column and interpolate NaNs using the index as x
     for j in range(arr.shape[1]):
         col = arr[:, j]
-        valid_mask = ~np.isnan(col)
-        
-        if valid_mask.sum() > 1:  # Ensure there are at least two non-NaN values
-            x_valid = x[valid_mask]     # Use index values for valid data points
-            y_valid = col[valid_mask]   # Non-NaN values in the column
-            x_nan = x[np.isnan(col)]    # Index values where NaNs are present
-            
-            if len(x_nan) > 0:  # Only interpolate if NaNs exist in the column
-                # Interpolate NaNs using the actual index values
-                col[np.isnan(col)] = np.interp(x_nan, x_valid, y_valid)
-
+        # Check if column contains any non-numeric values
+        if np.issubdtype(col.dtype, np.number):
+            valid_mask = ~np.isnan(col)
+            if valid_mask.sum() > 1:  # Ensure there are at least two non-NaN values
+                x_valid = x[valid_mask]     # Use index values for valid data points
+                y_valid = col[valid_mask]   # Non-NaN values in the column
+                nan_mask = np.isnan(col)    # Get mask of NaN values
+                if nan_mask.any():          # Only interpolate if NaNs exist
+                    col[nan_mask] = np.interp(x[nan_mask], x_valid, y_valid)
+                arr[:, j] = col
+    
     # Return a DataFrame with the interpolated values
     return pd.DataFrame(arr, index=df.index, columns=df.columns)
 

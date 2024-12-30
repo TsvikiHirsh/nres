@@ -46,8 +46,23 @@ class CrossSection:
                  tstep: float = 1.56255e-9,
                  tbins: int = 640,
                  first_tbin: int = 1,
-                 splitby: str = "elements"):
-        """Initialize a new CrossSection instance."""
+                 splitby: str = "elements",
+                 **materials):
+        """Initialize a new CrossSection instance.
+        
+        Args:
+            isotopes: Dictionary mapping isotope names/CrossSection objects to weights,
+                     or a CrossSection object to copy
+            name: Identifier for this cross-section combination
+            total_weight: Overall scaling factor for the cross-section
+            L: Flight path length in meters
+            tstep: Time step for simulation in seconds
+            tbins: Number of time bins
+            first_tbin: Index of the first time bin
+            splitby: How to split cross sections ("isotopes", "elements", "materials")
+            **materials: Additional materials to initialize with, where key is the material
+                        name and value is the material data dictionary
+        """
         # Initialize basic attributes
         self.name = name
         self.L = L
@@ -72,6 +87,11 @@ class CrossSection:
         elif isotopes:
             material_data = self._get_material_data(isotopes)
             self.add_material(name or "material_1", material_data, splitby, total_weight)
+        
+        # Handle additional materials passed as keyword arguments
+        for mat_name, mat_data in materials.items():
+            material_data = self._get_material_data(mat_data)
+            self.add_material(mat_name, material_data, splitby, total_weight)
 
     def _get_material_data(self, material: Union[str, Dict]) -> Dict:
         """Convert material string or dict to full material data structure."""
@@ -114,14 +134,17 @@ class CrossSection:
         """Calculate cross sections based on material information."""
         if not self.materials:
             return
-            
-        combined_table = None
+                
+        cross_sections = {}  # Use dictionary instead of concatenation to avoid duplicates
         combined_weights = {}
+
+        material_xs = {}
+        material_weights = {}
         
         for material_name, material_info in self.materials.items():
             splitby = material_info['splitby']
             total_weight = material_info['total_weight']
-            
+                
             # Process based on splitby parameter
             if splitby == "isotopes":
                 # Create separate entries for each isotope
@@ -129,61 +152,76 @@ class CrossSection:
                     for isotope, weight in element_info['isotopes'].items():
                         isotope_clean = isotope.replace("-", "")
                         if isotope_clean in self.__xsdata__:
-                            xs_data = self.__xsdata__[isotope_clean]
-                            if combined_table is None:
-                                combined_table = pd.DataFrame({isotope_clean: xs_data})
-                            else:
-                                combined_table[isotope_clean] = xs_data
+                            cross_sections[isotope_clean] = self.__xsdata__[isotope_clean]
                             combined_weights[isotope_clean] = weight * total_weight
-                            
+
+
+                                
             elif splitby == "elements":
                 # Combine isotopes for each element
                 for element, element_info in material_info['elements'].items():
-                    element_xs = pd.Series(0.0, index=next(iter(self.__xsdata__.values())).index)
+                    element_xs = {}
+                    element_weights = {}
                     for isotope, weight in element_info['isotopes'].items():
                         isotope_clean = isotope.replace("-", "")
                         if isotope_clean in self.__xsdata__:
-                            element_xs += self.__xsdata__[isotope_clean] * weight
+                            element_xs[isotope_clean] = self.__xsdata__[isotope_clean] * weight
+                            element_weights[isotope_clean] = weight * total_weight
                     
-                    if not element_xs.empty:
-                        if combined_table is None:
-                            combined_table = pd.DataFrame({element: element_xs})
-                        else:
-                            combined_table[element] = element_xs
+                    if len(element_xs)>0:
+                        element_xs = utils.interpolate(pd.DataFrame(element_xs))
+                        element_weights = pd.Series(element_weights)
+                        total = (element_xs * element_weights).sum(axis=1).astype(float)
+                        cross_sections[element] = total
                         combined_weights[element] = element_info['weight'] * total_weight
-                            
+
+                                
             elif splitby == "materials":
                 # Combine all isotopes into one material entry
-                material_xs = pd.Series(0.0, index=next(iter(self.__xsdata__.values())).index)
                 for element_info in material_info['elements'].values():
                     for isotope, weight in element_info['isotopes'].items():
                         isotope_clean = isotope.replace("-", "")
                         if isotope_clean in self.__xsdata__:
-                            material_xs += self.__xsdata__[isotope_clean] * weight
+                            material_xs[isotope_clean] = self.__xsdata__[isotope_clean] * weight
+                            material_weights[isotope_clean] = weight * total_weight
                 
-                if not material_xs.empty:
-                    if combined_table is None:
-                        combined_table = pd.DataFrame({material_name: material_xs})
-                    else:
-                        combined_table[material_name] = material_xs
-                    combined_weights[material_name] = total_weight
+            if splitby == "materials" and len(material_xs)>0:
+                material_xs = utils.interpolate(pd.DataFrame(material_xs))
+                material_weights = pd.Series(material_weights)
+                total = (material_xs * material_weights).sum(axis=1).astype(float)                  
+                cross_sections[material_name] = total
+                combined_weights[material_name] = total_weight
+
         
-        if combined_table is not None:
+        if cross_sections:
+            # Create DataFrame from dictionary (this ensures unique column names)
+            combined_table = pd.DataFrame(cross_sections)
+            
             # Normalize weights
             total_weight = sum(combined_weights.values())
             combined_weights = {k: v/total_weight for k, v in combined_weights.items()}
             
+            # Interpolate the combined table
+            self.table = utils.interpolate(combined_table)
+            self.table.index.name = "energy"
+            
             # Update instance attributes
-            self.table = combined_table
             self.weights = pd.Series(combined_weights)
             
+            # Ensure weights match table columns
+            weight_series = pd.Series(0.0, index=self.table.columns)
+            for col in self.table.columns:
+                if col in self.weights:
+                    weight_series[col] = self.weights[col]
+            
             # Calculate total cross section
-            self.table["total"] = (self.table * self.weights).sum(axis=1).astype(float)
+            self.table["total"] = (self.table * weight_series).sum(axis=1).astype(float)
             self.isotopes = self.weights.to_dict()
             
             # Update number density
             self.n = sum(mat['n'] * mat['total_weight'] for mat in self.materials.values())
 
+            
     def update_material(self, name: str, new_material_data: Dict):
         """Update complete material information."""
         if name not in self.materials:
@@ -359,62 +397,49 @@ class CrossSection:
     def __add__(self, other: 'CrossSection') -> 'CrossSection':
         """
         Add two CrossSection objects together.
-
-        Performs a weighted combination of two CrossSection objects, handling:
-        - Interpolation of cross-sections to a common energy grid
-        - Combination of weights based on total_weight values
-        - Preservation of number density calculations
         
-        The resulting CrossSection maintains consistency in all attributes
-        and represents the physical combination of the two cross-sections.
-
         Args:
             other: Another CrossSection object to add to this one
-
+            
         Returns:
             CrossSection: A new CrossSection object representing the weighted sum
                 of the two input cross-sections
-
-        Note:
-            The resulting weights are normalized such that they sum to 1.0,
-            and the total_weight of the result is set to 1.0.
         """
-        all_energies = self.table.index.union(other.table.index)
-        self_interpolated = utils.interpolate(self.table.reindex(all_energies)).drop(columns='total')
-        other_interpolated = utils.interpolate(other.table.reindex(all_energies)).drop(columns='total')
-
-        # Combine weights considering total_weight of each CrossSection
-        combined_weights = (self.weights * self.total_weight).add(
-            other.weights * other.total_weight, fill_value=0
-        )
-        combined_weights /= combined_weights.sum()
-
-        # Stack and combine the interpolated cross-sections
-        interpolated = pd.concat([
-            self_interpolated,
-            other_interpolated
-        ], keys=['self', 'other'], axis=1)
-
         new_self = deepcopy(self)
-        try:
-            # Try new pandas style first
-            new_self.table = (
-                interpolated.mul(pd.concat([self.weights, other.weights], keys=['self', 'other']))
-                .stack(0, future_stack=True).groupby(level=0).sum()
+        
+        # Calculate the total weights
+        self_total = sum(mat['total_weight'] for mat in self.materials.values())
+        other_total = sum(mat['total_weight'] for mat in other.materials.values())
+        total_weight_sum = self_total + other_total
+        
+        # Clear existing materials as we'll reconstruct them
+        new_self.materials = {}
+        
+        # Add materials from both CrossSections with adjusted weights
+        for mat_name, mat_info in self.materials.items():
+            new_mat = deepcopy(mat_info)
+            new_mat['total_weight'] = mat_info['total_weight'] / total_weight_sum
+            new_self.add_material(
+                name=mat_name,  # Keep original name
+                material_data=new_mat,
+                splitby=mat_info['splitby'],
+                total_weight=new_mat['total_weight']
             )
-        except TypeError:  # Older pandas versions won't recognize future_stack parameter
-            new_self.table = (
-                interpolated.mul(pd.concat([self.weights, other.weights], keys=['self', 'other']))
-                .stack(0).groupby(level=0).sum()
+        
+        for mat_name, mat_info in other.materials.items():
+            new_mat = deepcopy(mat_info)
+            new_mat['total_weight'] = mat_info['total_weight'] / total_weight_sum
+            new_self.add_material(
+                name=mat_name,  # Keep original name
+                material_data=new_mat,
+                splitby=mat_info['splitby'],
+                total_weight=new_mat['total_weight']
             )
-
-        # Update attributes for the combined CrossSection
-        new_self.weights = combined_weights
-        new_self.total_weight = 1.
-        new_self.table["total"] = (new_self.table * new_self.weights).sum(axis=1).astype(float)
-        new_self.n = self.total_weight * self.n + other.total_weight * other.n
-        new_self.isotopes = new_self.weights.to_dict()
-
+        
+        # Update the overall cross section properties
+        new_self.total_weight = 1.0
+        # new_self.n = self.total_weight * self.n + other.total_weight * other.n
+        
         return new_self
 
     def __mul__(self, total_weight: float = 1.) -> 'CrossSection':
@@ -437,7 +462,16 @@ class CrossSection:
         """
         new_self = deepcopy(self)
         new_self.total_weight = total_weight
+        
+        # Update total_weight in materials dictionary
+        for material_name in new_self.materials:
+            new_self.materials[material_name]['total_weight'] *= total_weight
+            
         return new_self
+
+    def __rmul__(self, total_weight: float = 1.) -> 'CrossSection':
+        """Right multiplication to support scalar * CrossSection."""
+        return self.__mul__(total_weight)
 
     def __call__(self, E: np.ndarray, weights: Optional[np.ndarray] = None, 
                  response: Optional[np.ndarray] = None) -> np.ndarray:
