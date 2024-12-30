@@ -39,7 +39,7 @@ class CrossSection:
         total_weight (float): Total weight factor for the cross-section.
     """
 
-    def __init__(self, isotopes: Dict[Union[str, 'CrossSection'], float] | 'CrossSection' = None, 
+    def __init__(self, isotopes: Dict[Union[str, 'CrossSection'], float] = None, 
                  name: str = "", 
                  total_weight: float = 1.,
                  L: float = 10.59,
@@ -171,6 +171,7 @@ class CrossSection:
                     if len(element_xs)>0:
                         element_xs = utils.interpolate(pd.DataFrame(element_xs))
                         element_weights = pd.Series(element_weights)
+                        element_weights/=element_weights.sum()
                         total = (element_xs * element_weights).sum(axis=1).astype(float)
                         cross_sections[element] = total
                         combined_weights[element] = element_info['weight'] * total_weight
@@ -188,6 +189,7 @@ class CrossSection:
             if splitby == "materials" and len(material_xs)>0:
                 material_xs = utils.interpolate(pd.DataFrame(material_xs))
                 material_weights = pd.Series(material_weights)
+                material_weights/=material_weights.sum()
                 total = (material_xs * material_weights).sum(axis=1).astype(float)                  
                 cross_sections[material_name] = total
                 combined_weights[material_name] = total_weight
@@ -418,7 +420,7 @@ class CrossSection:
         # Add materials from both CrossSections with adjusted weights
         for mat_name, mat_info in self.materials.items():
             new_mat = deepcopy(mat_info)
-            new_mat['total_weight'] = mat_info['total_weight'] / total_weight_sum
+            new_mat['total_weight'] = mat_info['total_weight'] 
             new_self.add_material(
                 name=mat_name,  # Keep original name
                 material_data=new_mat,
@@ -428,7 +430,7 @@ class CrossSection:
         
         for mat_name, mat_info in other.materials.items():
             new_mat = deepcopy(mat_info)
-            new_mat['total_weight'] = mat_info['total_weight'] / total_weight_sum
+            new_mat['total_weight'] = mat_info['total_weight'] 
             new_self.add_material(
                 name=mat_name,  # Keep original name
                 material_data=new_mat,
@@ -438,7 +440,7 @@ class CrossSection:
         
         # Update the overall cross section properties
         new_self.total_weight = 1.0
-        # new_self.n = self.total_weight * self.n + other.total_weight * other.n
+        # new_self.n = (self.total_weight * self.n + other.total_weight * other.n)/total_weight_sum
         
         return new_self
 
@@ -460,15 +462,16 @@ class CrossSection:
             This operation does not modify the internal weights between isotopes,
             only the overall scaling factor total_weight.
         """
-        self.total_weight = total_weight
+        new_self = deepcopy(self)
+        new_self.total_weight = total_weight
         
         # Update total_weight in materials dictionary
-        for material_name in self.materials:
-            self.materials[material_name]['total_weight'] *= total_weight
+        for material_name in new_self.materials:
+            new_self.materials[material_name]['total_weight'] *= total_weight
 
-        self._recalculate_cross_sections()
+        new_self._recalculate_cross_sections()
             
-        return self
+        return new_self
 
     def __rmul__(self, total_weight: float = 1.) -> 'CrossSection':
         """Right multiplication to support scalar * CrossSection."""
