@@ -130,6 +130,42 @@ class CrossSection:
         
         self._recalculate_cross_sections()
 
+    def _update_atomic_density(self) -> float:
+        """
+        Calculate and update the total atomic density based on current weights and materials.
+        
+        This method computes the weighted atomic density considering:
+        - Material splitting mode (isotopes/elements/materials)
+        - Individual material weights and atomic densities
+        - Current weight distribution among components
+        
+        Returns:
+            float: The calculated total atomic density
+        """
+        new_n = 0
+        
+        for material_name, material_info in self.materials.items():
+            material_weight = material_info['total_weight']
+            splitby = material_info['splitby']
+            
+            if splitby == "isotopes":
+                for element_info in material_info['elements'].values():
+                    for isotope, weight in element_info['isotopes'].items():
+                        isotope_clean = isotope.replace("-", "")
+                        if isotope_clean in self.weights.index:
+                            new_n += material_info['n'] * self.weights[isotope_clean] * material_weight
+                            
+            elif splitby == "elements":
+                for element, element_info in material_info['elements'].items():
+                    if element in self.weights.index:
+                        new_n += material_info['n'] * self.weights[element] * material_weight
+                        
+            elif splitby == "materials":
+                if material_name in self.weights.index:
+                    new_n += material_info['n'] * self.weights[material_name] * material_weight
+        
+        return new_n
+
     def _recalculate_cross_sections(self):
         """Calculate cross sections based on material information."""
         if not self.materials:
@@ -154,8 +190,6 @@ class CrossSection:
                         if isotope_clean in self.__xsdata__:
                             cross_sections[isotope_clean] = self.__xsdata__[isotope_clean]
                             combined_weights[isotope_clean] = weight * total_weight
-
-
                                 
             elif splitby == "elements":
                 # Combine isotopes for each element
@@ -171,11 +205,10 @@ class CrossSection:
                     if len(element_xs)>0:
                         element_xs = utils.interpolate(pd.DataFrame(element_xs))
                         element_weights = pd.Series(element_weights)
-                        element_weights/=element_weights.sum()
+                        element_weights /= element_weights.sum()
                         total = (element_xs * element_weights).sum(axis=1).astype(float)
                         cross_sections[element] = total
                         combined_weights[element] = element_info['weight'] * total_weight
-
                                 
             elif splitby == "materials":
                 # Combine all isotopes into one material entry
@@ -186,15 +219,14 @@ class CrossSection:
                             material_xs[isotope_clean] = self.__xsdata__[isotope_clean] * weight
                             material_weights[isotope_clean] = weight * total_weight
                 
-            if splitby == "materials" and len(material_xs)>0:
-                material_xs = utils.interpolate(pd.DataFrame(material_xs))
-                material_weights = pd.Series(material_weights)
-                material_weights/=material_weights.sum()
-                total = (material_xs * material_weights).sum(axis=1).astype(float)                  
-                cross_sections[material_name] = total
-                combined_weights[material_name] = total_weight
+                if len(material_xs)>0:
+                    material_xs = utils.interpolate(pd.DataFrame(material_xs))
+                    material_weights = pd.Series(material_weights)
+                    material_weights /= material_weights.sum()
+                    total = (material_xs * material_weights).sum(axis=1).astype(float)                  
+                    cross_sections[material_name] = total
+                    combined_weights[material_name] = total_weight
 
-        
         if cross_sections:
             # Create DataFrame from dictionary (this ensures unique column names)
             combined_table = pd.DataFrame(cross_sections)
@@ -220,8 +252,8 @@ class CrossSection:
             self.table["total"] = (self.table * weight_series).sum(axis=1).astype(float)
             self.isotopes = self.weights.to_dict()
             
-            # Update number density
-            self.n = sum(mat['n'] * mat['total_weight'] for mat in self.materials.values())
+            # Update total atomic density
+            self.n = self._update_atomic_density()
 
             
     def update_material(self, name: str, new_material_data: Dict):
@@ -346,12 +378,6 @@ class CrossSection:
         """
         Set and normalize weights for all isotopes.
 
-        This method handles the normalization of isotope weights and updates
-        the total cross-section accordingly. It ensures that:
-        - Weights sum to 1.0
-        - Isotopes with zero weight are removed
-        - The total cross-section is recalculated using the new weights
-
         Args:
             weights: Optional list of new weights. If provided, must match
                 the number of isotopes. If None, uses weights from self.isotopes.
@@ -376,6 +402,9 @@ class CrossSection:
         self.table["total"] = (
             self.table.drop(columns="total", errors="ignore") * self.weights
         ).sum(axis=1).astype(float)
+        
+        # Update total atomic density
+        self.n = self._update_atomic_density()
         
     def _set_energy_range(self, emin: float = 0.5e6, emax: float = 2.0e7):
         """
