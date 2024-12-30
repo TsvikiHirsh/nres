@@ -1,7 +1,7 @@
 Using nres.CrossSection for Material Definition and Combination
 ===============================================================
 
-This guide demonstrates various ways to define materials and combine them using the ``nres.CrossSection.from_material`` method. We'll also cover how to view cross-section weights, access the cross-section table, and plot the results.
+This guide demonstrates various ways to define materials and combine them using the ``nres.CrossSection`` method. We'll also cover how to view cross-section weights, access the cross-section table, and plot the results.
 
 Defining Materials
 ------------------
@@ -40,7 +40,7 @@ You can access predefined materials, elements, and isotopes from nres dictionari
 .. code-block:: python
 
     # Using nres.materials
-    steel_xs = nres.CrossSection.from_material(nres.materials["Steel, Stainless 304"])
+    steel_xs = nres.CrossSection(nres.materials["Steel, Stainless 304"])
     print(steel_xs.weights)
 
 Output:
@@ -58,7 +58,7 @@ Output:
     dtype: float64
 
     # Using nres.elements
-    carbon_xs = nres.CrossSection.from_material(nres.elements["Carbon"])
+    carbon_xs = nres.CrossSection(nres.elements["Carbon"])
     print(carbon_xs.weights)
 
 Output:
@@ -70,7 +70,7 @@ Output:
     dtype: float64
 
     # Using nres.isotopes
-    u235_xs = nres.CrossSection.from_material(nres.isotopes["U235"])
+    u235_xs = nres.CrossSection(nres.isotopes["U235"])
     print(u235_xs.weights)
 
 Output:
@@ -88,8 +88,8 @@ You can combine different materials using the ``__add__`` method:
 .. code-block:: python
 
     # Combine iron and nickel
-    iron_xs = nres.CrossSection.from_material("Fe")
-    iron_nickel_xs = iron_xs + nres.CrossSection.from_material("Ni")
+    iron_xs = nres.CrossSection("Fe")
+    iron_nickel_xs = iron_xs + nres.CrossSection("Ni")
     
     # View the weights of the combined material
     print(iron_nickel_xs.weights)
@@ -120,7 +120,7 @@ The ``from_material`` method allows you to specify how to split the cross-sectio
 .. code-block:: python
 
     # Split by isotopes
-    water_isotopes = nres.CrossSection.from_material("H2O", splitby="isotopes")
+    water_isotopes = nres.CrossSection("H2O", splitby="isotopes")
     print(water_isotopes.weights)
 
 Output:
@@ -135,7 +135,7 @@ Output:
     dtype: float64
 
     # Split by elements
-    water_elements = nres.CrossSection.from_material("H2O", splitby="elements")
+    water_elements = nres.CrossSection("H2O", splitby="elements")
     print(water_elements.weights)
 
 Output:
@@ -147,7 +147,7 @@ Output:
     dtype: float64
 
     # Split by materials (useful for complex mixtures)
-    water_material = nres.CrossSection.from_material("H2O", splitby="materials")
+    water_material = nres.CrossSection("H2O", splitby="materials")
     print(water_material.weights)
 
 Output:
@@ -199,33 +199,5 @@ The ``plot`` method allows for customization:
         logy=True
     )
 
-Advanced Usage
---------------
-
-Grouping by Isotopes
-^^^^^^^^^^^^^^^^^^^^
-
-You can group cross-sections by isotopes:
-
-.. code-block:: python
-
-    grouped_steel = steel_xs.groupby_isotopes()
-    print(grouped_steel.weights)
-
-Output:
-
-.. code-block:: text
-
-    C     0.00080
-    Mn    0.02000
-    P     0.00045
-    S     0.00030
-    Si    0.01000
-    Cr    0.19000
-    Ni    0.09500
-    Fe    0.68345
-    dtype: float64
-
-    grouped_steel.plot(title="Steel Cross-Section (Grouped by Elements)")
 
 This guide provides a comprehensive overview of using ``nres.CrossSection`` for defining and combining materials, as well as analyzing and visualizing cross-section data. Experiment with different materials and combinations to explore their neutron interaction properties!

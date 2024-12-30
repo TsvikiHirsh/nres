@@ -34,7 +34,7 @@ Here's a quick example of how to use `nres`:
     import nres
 
     # Define material
-    Si = nres.CrossSection.from_material("Silicon")
+    Si = nres.CrossSection("Silicon")
 
     # Load data
     data = nres.Data.from_transmission("silicon.dat")
