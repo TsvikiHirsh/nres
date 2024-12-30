@@ -121,8 +121,8 @@ class CrossSection:
             splitby: How to split cross sections ("isotopes", "elements", "materials")
             total_weight: Overall scaling factor for this material
         """
-        if name in self.materials:
-            raise ValueError(f"Material '{name}' already exists")
+        # if name in self.materials:
+        #     raise ValueError(f"Material '{name}' already exists")
             
         self.materials[name] = deepcopy(material_data)
         self.materials[name]['splitby'] = splitby
