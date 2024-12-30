@@ -48,7 +48,11 @@ class TransmissionModel(lmfit.Model):
         """
         super().__init__(self.transmission, **kwargs)
 
-        self.cross_section = CrossSection(cross_section)
+        self.cross_section = CrossSection()
+
+        for material in cross_section.materials:
+            self.cross_section += CrossSection(**{material:cross_section.materials[material]},
+            splitby=cross_section.materials[material]["splitby"])
 
         self.params = self.make_params()
         if vary_weights is not None:

@@ -460,14 +460,15 @@ class CrossSection:
             This operation does not modify the internal weights between isotopes,
             only the overall scaling factor total_weight.
         """
-        new_self = deepcopy(self)
-        new_self.total_weight = total_weight
+        self.total_weight = total_weight
         
         # Update total_weight in materials dictionary
-        for material_name in new_self.materials:
-            new_self.materials[material_name]['total_weight'] *= total_weight
+        for material_name in self.materials:
+            self.materials[material_name]['total_weight'] *= total_weight
+
+        self._recalculate_cross_sections()
             
-        return new_self
+        return self
 
     def __rmul__(self, total_weight: float = 1.) -> 'CrossSection':
         """Right multiplication to support scalar * CrossSection."""
