@@ -45,55 +45,164 @@ class CrossSection:
                  L: float = 10.59,
                  tstep: float = 1.56255e-9,
                  tbins: int = 640,
-                 first_tbin: int = 1):
-        """
-        Initialize a new CrossSection instance.
-
-        The initialization can occur in two ways:
-        1. From scratch using a dictionary of isotopes and their weights
-        2. By copying an existing CrossSection object
-
-        Args:
-            isotopes: Either a dictionary mapping isotope names/CrossSection objects to their
-                weights, or an existing CrossSection object to copy from.
-            name: Identifier for this cross-section combination. If copying from an existing
-                CrossSection and no name is provided, uses the original name.
-            total_weight: Overall scaling factor for the cross-section (default: 1.0).
-            L: Flight path length in meters (default: 10.59).
-            tstep: Time step for the simulation in seconds (default: 1.56255e-9).
-            tbins: Number of time bins for the simulation (default: 640).
-            first_tbin: Index of the first time bin (default: 1).
-        """
+                 first_tbin: int = 1,
+                 splitby: str = "elements"):
+        """Initialize a new CrossSection instance."""
+        # Initialize basic attributes
+        self.name = name
+        self.L = L
+        self.tstep = tstep
+        self.tbins = tbins
+        self.first_tbin = first_tbin
+        self.tgrid = np.arange(self.first_tbin, self.tbins+1, 1) * self.tstep
+        
+        # Store the original materials and their properties
+        self.materials = {}
+        self.__xsdata__ = None
+        self._load_xsdata()
+        
+        # Initialize empty table and weights
+        self.table = pd.DataFrame()
+        self.weights = pd.Series(dtype=float)
+        self.isotopes = {}
+        self.n = 0.
+        
         if isinstance(isotopes, CrossSection):
             self._init_from_cross_section(isotopes, name)
-        else:
-            self._init_new(isotopes, name, total_weight, L, tstep, tbins, first_tbin)
+        elif isotopes:
+            material_data = self._get_material_data(isotopes)
+            self.add_material(name or "material_1", material_data, splitby, total_weight)
 
-    def _init_from_cross_section(self, other: 'CrossSection', name: str = ""):
+    def _get_material_data(self, material: Union[str, Dict]) -> Dict:
+        """Convert material string or dict to full material data structure."""
+        if isinstance(material, str):
+            formulas = {nres.materials[element]["formula"]: nres.materials[element]["name"] 
+                       for element in nres.materials}
+            try:  # Try materials database
+                material = nres.materials[formulas.get(material, material)]
+            except KeyError:  # Try elements database
+                try:
+                    formulas = {nres.elements[element]["formula"]: nres.elements[element]["name"] 
+                              for element in nres.elements}
+                    material = nres.elements[formulas.get(material.capitalize(), 
+                                                        material.capitalize())]
+                except KeyError:  # Try isotopes database
+                    material = nres.isotopes[material.capitalize().replace("-","")]
+        return material
+
+    def add_material(self, name: str, material_data: Dict, 
+                    splitby: str = "elements", total_weight: float = 1.0):
         """
-        Initialize this CrossSection by copying from an existing instance.
-
-        Creates a new CrossSection with the same properties as the source object
-        but maintains independence through proper copying of mutable attributes.
-
-        Args:
-            other: Source CrossSection object to copy from.
-            name: New name for this cross-section. If empty, uses the original name.
-        """
-        self.isotopes = other.isotopes.copy()
-        self.name = name if name else f"{other.name}"
-        self.total_weight = other.total_weight
-        self.L = other.L
-        self.tstep = other.tstep
-        self.tbins = other.tbins
-        self.first_tbin = other.first_tbin
-        self.tgrid = other.tgrid.copy()
-        self.n = other.n
-        self.__xsdata__ = other.__xsdata__
+        Add a new material with complete information.
         
-        # Deep copy mutable attributes to ensure independence
-        self.table = other.table.copy()
-        self.weights = other.weights.copy()
+        Args:
+            name: Material name/identifier
+            material_data: Complete material information dictionary
+            splitby: How to split cross sections ("isotopes", "elements", "materials")
+            total_weight: Overall scaling factor for this material
+        """
+        if name in self.materials:
+            raise ValueError(f"Material '{name}' already exists")
+            
+        self.materials[name] = deepcopy(material_data)
+        self.materials[name]['splitby'] = splitby
+        self.materials[name]['total_weight'] = total_weight
+        
+        self._recalculate_cross_sections()
+
+    def _recalculate_cross_sections(self):
+        """Calculate cross sections based on material information."""
+        if not self.materials:
+            return
+            
+        combined_table = None
+        combined_weights = {}
+        
+        for material_name, material_info in self.materials.items():
+            splitby = material_info['splitby']
+            total_weight = material_info['total_weight']
+            
+            # Process based on splitby parameter
+            if splitby == "isotopes":
+                # Create separate entries for each isotope
+                for element_info in material_info['elements'].values():
+                    for isotope, weight in element_info['isotopes'].items():
+                        isotope_clean = isotope.replace("-", "")
+                        if isotope_clean in self.__xsdata__:
+                            xs_data = self.__xsdata__[isotope_clean]
+                            if combined_table is None:
+                                combined_table = pd.DataFrame({isotope_clean: xs_data})
+                            else:
+                                combined_table[isotope_clean] = xs_data
+                            combined_weights[isotope_clean] = weight * total_weight
+                            
+            elif splitby == "elements":
+                # Combine isotopes for each element
+                for element, element_info in material_info['elements'].items():
+                    element_xs = pd.Series(0.0, index=next(iter(self.__xsdata__.values())).index)
+                    for isotope, weight in element_info['isotopes'].items():
+                        isotope_clean = isotope.replace("-", "")
+                        if isotope_clean in self.__xsdata__:
+                            element_xs += self.__xsdata__[isotope_clean] * weight
+                    
+                    if not element_xs.empty:
+                        if combined_table is None:
+                            combined_table = pd.DataFrame({element: element_xs})
+                        else:
+                            combined_table[element] = element_xs
+                        combined_weights[element] = element_info['weight'] * total_weight
+                            
+            elif splitby == "materials":
+                # Combine all isotopes into one material entry
+                material_xs = pd.Series(0.0, index=next(iter(self.__xsdata__.values())).index)
+                for element_info in material_info['elements'].values():
+                    for isotope, weight in element_info['isotopes'].items():
+                        isotope_clean = isotope.replace("-", "")
+                        if isotope_clean in self.__xsdata__:
+                            material_xs += self.__xsdata__[isotope_clean] * weight
+                
+                if not material_xs.empty:
+                    if combined_table is None:
+                        combined_table = pd.DataFrame({material_name: material_xs})
+                    else:
+                        combined_table[material_name] = material_xs
+                    combined_weights[material_name] = total_weight
+        
+        if combined_table is not None:
+            # Normalize weights
+            total_weight = sum(combined_weights.values())
+            combined_weights = {k: v/total_weight for k, v in combined_weights.items()}
+            
+            # Update instance attributes
+            self.table = combined_table
+            self.weights = pd.Series(combined_weights)
+            
+            # Calculate total cross section
+            self.table["total"] = (self.table * self.weights).sum(axis=1).astype(float)
+            self.isotopes = self.weights.to_dict()
+            
+            # Update number density
+            self.n = sum(mat['n'] * mat['total_weight'] for mat in self.materials.values())
+
+    def update_material(self, name: str, new_material_data: Dict):
+        """Update complete material information."""
+        if name not in self.materials:
+            raise KeyError(f"Material '{name}' not found")
+            
+        splitby = self.materials[name]['splitby']
+        total_weight = self.materials[name]['total_weight']
+        self.materials[name] = deepcopy(new_material_data)
+        self.materials[name]['splitby'] = splitby
+        self.materials[name]['total_weight'] = total_weight
+        
+        self._recalculate_cross_sections()
+
+    def get_material(self, name: str) -> Dict:
+        """Get complete material information."""
+        if name not in self.materials:
+            raise KeyError(f"Material '{name}' not found")
+        
+        return deepcopy(self.materials[name])
 
     def _init_new(self, isotopes: Dict[Union[str, 'CrossSection'], float] = None,
                   name: str = "", 
