@@ -5,9 +5,9 @@ from pathlib import Path
 import shelve
 from tqdm import tqdm
 import requests
-import mendeleev
-import materials_compendium as mc
 import pandas as pd
+import json
+
 
 # Constants
 SPEED_OF_LIGHT = 299792458  # m/s
@@ -41,6 +41,22 @@ def energy2time(energy, flight_path_length):
     """
     γ = 1 + energy / (MASS_OF_NEUTRON * SPEED_OF_LIGHT ** 2)
     return flight_path_length / SPEED_OF_LIGHT * np.sqrt(γ ** 2 / (γ ** 2 - 1))
+
+
+
+
+
+def load_materials_data():
+    # Load the materials, elements, and isotopes data from the json dump
+    data_path = Path(__file__).parent / "data" / "nres_materials.json"
+    with open(data_path, "r") as f:
+        data = json.load(f)
+        materials = data["materials"]
+        elements = data["elements"]
+        isotopes = data["isotopes"]
+        return materials, elements, isotopes
+
+
 
 def materials_dict():
     """
@@ -76,8 +92,9 @@ def materials_dict():
                 ...
             }
     """
-    materials = {}
+    import materials_compendium as mc
 
+    materials = {}
     for material in mc.MaterialsCompendium:
         mat_name = material.Name
         density = material.Density
@@ -234,12 +251,12 @@ def load_or_create_materials_cache():
 def create_and_save_materials_cache():
     materials = materials_dict()
     elements, isotopes = elements_and_isotopes_dict()
-    
-    cache_path = get_cache_path() / "materials"
-    with shelve.open(str(cache_path)) as fid:
-        fid["materials"] = materials
-        fid["elements"] = elements
-        fid["isotopes"] = isotopes
+
+    data_path = Path(__file__).parent / "data" / "nres_materials.json"
+    with open(data_path, "w") as f:
+        json.dump({"materials":materials,
+                   "elements":elements,
+                   "isotopes":isotopes}, f)
     
     return materials, elements, isotopes
 
