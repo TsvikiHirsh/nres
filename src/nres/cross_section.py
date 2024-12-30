@@ -252,13 +252,10 @@ class CrossSection:
         The loaded data is stored in self.__xsdata__ as a dictionary mapping
         isotope names to their cross-section data as pandas Series.
         """
+        import trinidi_data
         if self.__xsdata__ is None:
-            cache_path = utils.get_cache_path() / "xsdata.npy"
-            if not os.path.exists(cache_path):
-                print(f"File not found at {cache_path}, downloading...")
-                utils.download_xsdata()
-
-            xsdata = np.load(cache_path, allow_pickle=True)[()]
+            data_path = os.path.join(os.path.dirname(trinidi_data.__file__),  "xsdata.npy")
+            xsdata = np.load(data_path, allow_pickle=True)[()]
             self.__xsdata__ = {
                 isotope.replace("-",""): pd.Series(
                     xsdata["cross_sections"][i], 
