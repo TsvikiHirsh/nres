@@ -22,8 +22,13 @@ setup(
     description="Simple yet powerful package for neutron resonance fitting",
     packages=find_packages(where="src"),  # Look for packages in src/
     package_dir={"": "src"},  # Tell setuptools that packages are in src/
-    include_package_data=True,  # To include non-python files if any
+    include_package_data=True,  # To include non-python files
+    package_data={
+        "nres": ["data/nres_materials.json"],  # Specify the JSON file as package data
+    },
     python_requires=">=3.8",
     ext_modules=ext_modules,
-    zip_safe=False,  # Avoids problems with C++ extensions and zip imports
+    zip_safe=False,
 )
+
+
