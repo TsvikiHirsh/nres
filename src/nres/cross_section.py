@@ -153,6 +153,17 @@ class CrossSection:
         self.materials[name] = deepcopy(material_data)
         self.materials[name]['splitby'] = splitby
         self.materials[name]['total_weight'] = total_weight
+
+        # Store current energy grids
+        energy_grids = []
+        if hasattr(self, 'table') and len(self.table)>0:
+            energy_grids.append(self.table.index)
+        
+
+        # Store merged grid if available
+        if energy_grids:
+            merged_grid = pd.Index(sorted(set().union(*energy_grids)))
+            self._energy_grid = merged_grid
         
         self._recalculate_cross_sections()
 
