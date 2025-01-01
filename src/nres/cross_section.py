@@ -242,10 +242,17 @@ class CrossSection:
         if cross_sections:
             combined_table = pd.DataFrame(cross_sections)
             
+            # If we have a stored energy grid, reindex and interpolate
+            if hasattr(self, '_energy_grid'):
+                combined_table = pd.DataFrame(combined_table, index=self._energy_grid)
+                combined_table = utils.interpolate(combined_table)
+            else:
+                combined_table = utils.interpolate(combined_table)
+            
             total_weight = sum(combined_weights.values())
             combined_weights = {k: v/total_weight for k, v in combined_weights.items()}
             
-            self.table = utils.interpolate(combined_table)
+            self.table = combined_table
             self.table.index.name = "energy"
             
             self.weights = pd.Series(combined_weights)
@@ -264,25 +271,17 @@ class CrossSection:
         """Add two CrossSection objects together."""
         new_self = deepcopy(self)
         
-        self_total = sum(mat['total_weight'] for mat in self.materials.values())
-        other_total = sum(mat['total_weight'] for mat in other.materials.values())
-        total_weight_sum = self_total + other_total
+        # Store current energy grids
+        energy_grids = []
+        if hasattr(self, 'table') and self.table is not None:
+            energy_grids.append(self.table.index)
+        if hasattr(other, 'table') and other.table is not None:
+            energy_grids.append(other.table.index)
         
-        new_self.materials = {}
-        
-        for mat_name, mat_info in self.materials.items():
-            new_mat = deepcopy(mat_info)
-            new_mat['total_weight'] = mat_info['total_weight'] 
-            new_self.add_material(
-                name=mat_name,
-                material_data=new_mat,
-                splitby=mat_info['splitby'],
-                total_weight=new_mat['total_weight']
-            )
-        
+        # Combine materials
         for mat_name, mat_info in other.materials.items():
             new_mat = deepcopy(mat_info)
-            new_mat['total_weight'] = mat_info['total_weight'] 
+            new_mat['total_weight'] = mat_info['total_weight']
             new_self.add_material(
                 name=mat_name,
                 material_data=new_mat,
@@ -290,8 +289,12 @@ class CrossSection:
                 total_weight=new_mat['total_weight']
             )
         
-        new_self.total_weight = 1.0
-        
+        # Store merged grid if available
+        if energy_grids:
+            merged_grid = pd.Index(sorted(set().union(*energy_grids)))
+            new_self._energy_grid = merged_grid
+            
+        new_self._recalculate_cross_sections()
         return new_self
 
     def __mul__(self, total_weight: float = 1.) -> 'CrossSection':
