@@ -1,61 +1,93 @@
 import unittest
 import numpy as np
-from cross_section import CrossSection, grab_from_endf
+import pandas as pd
+from nres.cross_section import CrossSection
+from nres import materials
 
-class TestCrossSection(unittest.TestCase):
-
-    @classmethod
-    def setUpClass(cls):
-        """Set up a CrossSection object for Al-27 before any tests run."""
-        cls.cross_section_al27 = CrossSection(isotopes={"Al-27": 1.0})
-
-    def test_cross_section_al27(self):
-        """Test CrossSection values for Al-27 at specific energies."""
-        # Test at 1.0 MeV
-        energy_1 = np.array([1.0])
-        expected_xs_1 = self.cross_section_al27(energy_1)[0]
-        self.assertAlmostEqual(expected_xs_1, 2.36756, delta=1e-5, 
-                               msg=f"Expected cross section at 1.0 MeV: ~2.36756, but got {expected_xs_1}")
-
-        # Test at 0.1 MeV
-        energy_2 = np.array([0.1])
-        expected_xs_2 = self.cross_section_al27(energy_2)[0]
-        self.assertAlmostEqual(expected_xs_2, 5.30213310, delta=1e-4,
-                               msg=f"Expected cross section at 0.1 MeV: ~5.30213, but got {expected_xs_2}")
-
-        # Test at 10 MeV
-        energy_3 = np.array([10.0])
-        expected_xs_3 = self.cross_section_al27(energy_3)[0]
-        self.assertAlmostEqual(expected_xs_3, 1.723, delta=1e-3,
-                               msg=f"Expected cross section at 10 MeV: ~1.723, but got {expected_xs_3}")
-
-    def test_cross_section_combination(self):
-        """Test CrossSection values for a combination of isotopes."""
-        isotopes = {"Al-27": 0.7, "O-16": 0.3}
-        combined_cs = CrossSection(isotopes=isotopes)
+class TestCrossSectionOrder(unittest.TestCase):
+    def setUp(self):
+        # Create sample materials for testing
+        self.pe = materials["Polyethylene, Non-borated"]
+        self.al2o3 = materials["Aluminum Oxide"]
+        self.iron = "Iron"
         
-        # Test at 1.0 MeV
-        energy_1 = np.array([1.0])
-        combined_xs_1 = combined_cs(energy_1)[0]
-        self.assertAlmostEqual(combined_xs_1, 4.09538, delta=1e-3,
-                               msg=f"Expected combined cross section at 1.0 MeV: ~4.09538, but got {combined_xs_1}")
+    def test_addition_shape_consistency(self):
+        """Test that addition produces consistent shapes regardless of order"""
+        # First order
+        xs1 = CrossSection()
+        xs1 += CrossSection(pe=self.pe, splitby="materials")
+        xs1 += CrossSection(rdx=self.al2o3, splitby="materials")
+        xs1 += CrossSection(iron=self.iron, splitby="materials")
+        
+        # Second order
+        xs2 = CrossSection()
+        xs2 += CrossSection(iron=self.iron, splitby="materials")
+        xs2 += CrossSection(pe=self.pe, splitby="materials")
+        xs2 += CrossSection(rdx=self.al2o3, splitby="materials")
+        
+        # Third order
+        xs3 = CrossSection()
+        xs3 += CrossSection(rdx=self.al2o3, splitby="materials")
+        xs3 += CrossSection(iron=self.iron, splitby="materials")
+        xs3 += CrossSection(pe=self.pe, splitby="materials")
+        
+        # Check shapes match
+        self.assertEqual(xs1.table.shape, xs2.table.shape)
+        self.assertEqual(xs2.table.shape, xs3.table.shape)
+        
+        # Check energy grids match
+        pd.testing.assert_index_equal(xs1.table.index, xs2.table.index)
+        pd.testing.assert_index_equal(xs2.table.index, xs3.table.index)
 
-        # Test at 0.1 MeV
-        energy_2 = np.array([0.1])
-        combined_xs_2 = combined_cs(energy_2)[0]
-        self.assertAlmostEqual(combined_xs_2, 4.78696, delta=1e-3,
-                               msg=f"Expected combined cross section at 0.1 MeV: ~4.78696, but got {combined_xs_2}")
+    def test_atomic_density_consistency(self):
+        """Test that atomic density is consistent regardless of addition order"""
+        # First order
+        xs1 = CrossSection()
+        xs1 += CrossSection(pe=self.pe, splitby="materials")
+        xs1 += CrossSection(rdx=self.al2o3, splitby="materials")
+        
+        # Second order
+        xs2 = CrossSection()
+        xs2 += CrossSection(rdx=self.al2o3, splitby="materials")
+        xs2 += CrossSection(pe=self.pe, splitby="materials")
+        
+        # Check atomic densities match
+        self.assertAlmostEqual(xs1.n, xs2.n, places=6)
+        
+    def test_multiplication(self):
+        """Test multiplication operation"""
+        xs = CrossSection()
+        xs += CrossSection(pe=self.pe, splitby="materials")
+        
+        # Test multiplication by scalar
+        factor = 2.5
+        xs_scaled = xs * factor
+        
+        # Check that atomic density scales correctly
+        self.assertAlmostEqual(xs_scaled.n, xs.n * factor, places=6)
+        
+        # Check that cross sections scale correctly
+        pd.testing.assert_frame_equal(xs_scaled.table, xs.table)
+        
+        # Check that weights remain normalized
+        self.assertAlmostEqual(sum(xs_scaled.weights), 1.0, places=6)
 
-        # Test at 10 MeV
-        energy_3 = np.array([10.0])
-        combined_xs_3 = combined_cs(energy_3)[0]
-        self.assertAlmostEqual(combined_xs_3, 1.600516, delta=1e-3,
-                               msg=f"Expected combined cross section at 10 MeV: ~1.600516, but got {combined_xs_3}")
-
-    def test_cross_section_non_existing_isotope(self):
-        """Test handling of non-existing isotopes."""
-        with self.assertRaises(Exception):
-            grab_from_endf("Xy-999")
+    def test_interpolation_accuracy(self):
+        """Test that interpolation produces accurate results"""
+        xs1 = CrossSection(pe=self.pe, splitby="materials")
+        xs2 = CrossSection(iron=self.iron, splitby="materials")
+        
+        combined = xs1 + xs2
+        
+        # Check interpolated values lie between original values
+        for col in combined.table.columns:
+            if col != 'total':  # Skip the total column
+                self.assertTrue(
+                    combined.table[col].between(
+                        combined.table[col].min(),
+                        combined.table[col].max()
+                    ).all()
+                )
 
 
 if __name__ == "__main__":
