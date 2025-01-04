@@ -147,24 +147,42 @@ class CrossSection:
         # Update total atomic density
         self.n = self._update_atomic_density()
 
-    def add_material(self, name: str, material_data: Dict, 
-                    splitby: str = "elements", total_weight: float = 1.0):
-        """Add a new material with complete information."""
+    def add_material(self, name: str, material_data: Dict, splitby: str = "elements", total_weight: float = 1.0):
+        """
+        Add a new material with complete information.
+        
+        Args:
+            name: str, name of the material
+            material_data: Dict, material composition data
+            splitby: str, how to split the material ('elements', 'isotopes', or 'materials')
+            total_weight: float, total weight of the material
+        """
+        # Deep copy the material data to prevent modifications to the original
         self.materials[name] = deepcopy(material_data)
         self.materials[name]['splitby'] = splitby
         self.materials[name]['total_weight'] = total_weight
 
-        # Store current energy grids
+        # Collect all existing energy grids
         energy_grids = []
-        if hasattr(self, 'table') and len(self.table)>0:
+        
+        # Add current table's energy grid if it exists
+        if hasattr(self, 'table') and len(self.table) > 0:
             energy_grids.append(self.table.index)
         
-
-        # Store merged grid if available
+        # Add energy grids from the new material's cross sections
+        for element_info in material_data['elements'].values():
+            for isotope in element_info['isotopes']:
+                isotope_clean = isotope.replace("-", "")
+                if isotope_clean in self.__xsdata__:
+                    energy_grids.append(self.__xsdata__[isotope_clean].index)
+        
+        # If we have any energy grids, merge them
         if energy_grids:
+            # Create a merged grid that includes all unique energy points
             merged_grid = pd.Index(sorted(set().union(*energy_grids)))
             self._energy_grid = merged_grid
         
+        # Recalculate cross sections with the updated energy grid
         self._recalculate_cross_sections()
 
     def _update_atomic_density(self) -> float:
@@ -218,47 +236,75 @@ class CrossSection:
                                 
             elif splitby == "elements":
                 for element, element_info in material_info['elements'].items():
-                    element_xs = {}
+                    element_xs_dict = {}
                     element_weights = {}
                     for isotope, weight in element_info['isotopes'].items():
                         isotope_clean = isotope.replace("-", "")
                         if isotope_clean in self.__xsdata__:
-                            element_xs[isotope_clean] = self.__xsdata__[isotope_clean] * weight
+                            # Store the raw cross section data instead of multiplying by weight here
+                            element_xs_dict[isotope_clean] = self.__xsdata__[isotope_clean]
                             element_weights[isotope_clean] = weight * total_weight
                     
-                    if len(element_xs)>0:
-                        element_xs = utils.interpolate(pd.DataFrame(element_xs))
+                    if len(element_xs_dict) > 0:
+                        # Convert dictionary of Series to list of DataFrames for interleave_xs_energies
+                        element_xs_dfs = [pd.DataFrame({name: xs}) for name, xs in element_xs_dict.items()]
+                        # Use the new interleave_xs_energies function
+                        element_xs = self._interleave_xs_energies(element_xs_dfs)
+                        
+                        # Now apply the weights after interpolation
                         element_weights = pd.Series(element_weights)
                         element_weights /= element_weights.sum()
-                        total = (element_xs * element_weights).sum(axis=1).astype(float)
+                        
+                        # Calculate weighted sum for the element
+                        total = pd.Series(0.0, index=element_xs.index)
+                        for col in element_xs.columns:
+                            isotope = col.split('_iso_')[0]  # Get original isotope name from column
+                            if isotope in element_weights:
+                                total += element_xs[col] * element_weights[isotope]
+                                
                         cross_sections[element] = total
                         combined_weights[element] = element_info['weight'] * total_weight
                                 
             elif splitby == "materials":
+                material_xs_dict = {}
+                material_weights = {}
                 for element_info in material_info['elements'].values():
                     for isotope, weight in element_info['isotopes'].items():
                         isotope_clean = isotope.replace("-", "")
                         if isotope_clean in self.__xsdata__:
-                            material_xs[isotope_clean] = self.__xsdata__[isotope_clean] * weight
+                            # Store raw cross section data
+                            material_xs_dict[isotope_clean] = self.__xsdata__[isotope_clean]
                             material_weights[isotope_clean] = weight * total_weight
                 
-                if len(material_xs)>0:
-                    material_xs = utils.interpolate(pd.DataFrame(material_xs))
+                if len(material_xs_dict) > 0:
+                    # Convert dictionary of Series to list of DataFrames for interleave_xs_energies
+                    material_xs_dfs = [pd.DataFrame({name: xs}) for name, xs in material_xs_dict.items()]
+                    # Use the new interleave_xs_energies function
+                    material_xs = self._interleave_xs_energies(material_xs_dfs)
+                    
+                    # Now apply the weights after interpolation
                     material_weights = pd.Series(material_weights)
                     material_weights /= material_weights.sum()
-                    total = (material_xs * material_weights).sum(axis=1).astype(float)                  
+                    
+                    # Calculate weighted sum for the material
+                    total = pd.Series(0.0, index=material_xs.index)
+                    for col in material_xs.columns:
+                        isotope = col.split('_iso_')[0]  # Get original isotope name from column
+                        if isotope in material_weights:
+                            total += material_xs[col] * material_weights[isotope]
+                            
                     cross_sections[material_name] = total
                     combined_weights[material_name] = total_weight
 
         if cross_sections:
-            combined_table = pd.DataFrame(cross_sections)
+            # Convert all cross sections to DataFrames for final interpolation
+            xs_dfs = [pd.DataFrame({name: xs}) for name, xs in cross_sections.items()]
+            combined_table =self._interleave_xs_energies(xs_dfs)
             
             # If we have a stored energy grid, reindex and interpolate
             if hasattr(self, '_energy_grid'):
-                combined_table = pd.DataFrame(combined_table, index=self._energy_grid)
-                combined_table = utils.interpolate(combined_table)
-            else:
-                combined_table = utils.interpolate(combined_table)
+                combined_table = combined_table.reindex(self._energy_grid)
+                combined_table = self._interleave_xs_energies([combined_table])
             
             total_weight = sum(combined_weights.values())
             combined_weights = {k: v/total_weight for k, v in combined_weights.items()}
@@ -270,9 +316,11 @@ class CrossSection:
             
             weight_series = pd.Series(0.0, index=self.table.columns)
             for col in self.table.columns:
-                if col in self.weights:
-                    weight_series[col] = self.weights[col]
+                base_col = col.split('_iso_')[0]  # Handle new column naming from interleave_xs_energies
+                if base_col in self.weights:
+                    weight_series[col] = self.weights[base_col]
             
+            # Calculate total weighted cross section
             self.table["total"] = (self.table * weight_series).sum(axis=1).astype(float)
             self.isotopes = self.weights.to_dict()
             
@@ -337,6 +385,48 @@ class CrossSection:
             E, 
             response
         ))
+    
+
+    def _interleave_xs_energies(self,xs_data):
+        """
+        Interleave cross section data from different isotopes by interpolating across their
+        combined energy grid points.
+        
+        Args:
+            xs_data: DataFrame or Series containing cross section data with energy index,
+                    or a list of such DataFrames/Series
+        Returns:
+            DataFrame with combined energy grid and interpolated cross section values
+        """
+        if isinstance(xs_data, pd.Series):
+            return self._interleave_xs_energies(pd.DataFrame(xs_data)).iloc[:, 0]
+            
+        # If input is a single DataFrame, wrap it in a list
+        if not isinstance(xs_data, list):
+            xs_data = [xs_data]
+        
+        # Combine all unique energy points from all cross section data
+        all_energies = sorted(set().union(*[df.index for df in xs_data]))
+        
+        # Create a new DataFrame with the combined energy grid
+        result = pd.DataFrame(index=all_energies)
+        
+        # Add data from each cross section dataset
+        for i, xs_df in enumerate(xs_data):
+            if isinstance(xs_df, pd.Series):
+                xs_df = xs_df.to_frame(f'xs_{i}')
+            
+            # Reindex to include all energy points
+            xs_reindexed = xs_df.reindex(all_energies)
+            
+            # Interpolate missing values for each cross section column
+            for col in xs_reindexed.columns:
+                # Keep original column name but add isotope identifier if needed
+                result[f'{col}' if len(xs_data) > 1 else col] = \
+                    xs_reindexed[col].interpolate(method='linear')
+        
+        return result
+
     
     def plot(self, **kwargs):
         """

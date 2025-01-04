@@ -289,38 +289,6 @@ def download_xsdata():
     else:
         raise Exception(f"Failed to download the file. Status code: {response.status_code}")
     
-def interpolate(df):
-    """
-    Interpolate NaN values in a DataFrame or Series.
-    
-    Args:
-        df: DataFrame or Series to interpolate
-    Returns:
-        DataFrame or Series with interpolated values
-    """
-    if isinstance(df, pd.Series):
-        return interpolate(pd.DataFrame(df)).iloc[:, 0]
-        
-    # Get underlying NumPy array and index values
-    arr = df.values.copy()  # Make a copy to avoid modifying original
-    x = df.index.values     # Use the index values (energy bins) for interpolation
-    
-    # Loop through each column and interpolate NaNs using the index as x
-    for j in range(arr.shape[1]):
-        col = arr[:, j]
-        # Check if column contains any non-numeric values
-        if np.issubdtype(col.dtype, np.number):
-            valid_mask = ~np.isnan(col)
-            if valid_mask.sum() > 1:  # Ensure there are at least two non-NaN values
-                x_valid = x[valid_mask]     # Use index values for valid data points
-                y_valid = col[valid_mask]   # Non-NaN values in the column
-                nan_mask = np.isnan(col)    # Get mask of NaN values
-                if nan_mask.any():          # Only interpolate if NaNs exist
-                    col[nan_mask] = np.interp(x[nan_mask], x_valid, y_valid)
-                arr[:, j] = col
-    
-    # Return a DataFrame with the interpolated values
-    return pd.DataFrame(arr, index=df.index, columns=df.columns)
 
 def register_material(name, components, fractions=None, fraction_type='atomic', density=None, formula=None):
     """
