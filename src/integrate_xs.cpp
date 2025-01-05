@@ -23,6 +23,31 @@ double linear_interp(const std::vector<double>& xs_energies, const std::vector<d
     return 0.0; // Default return in case of error
 }
 
+// Extend and normalize the kernel
+std::vector<double> extend_and_normalize_kernel(const std::vector<double>& kernel, size_t pad_size) {
+    size_t original_size = kernel.size();
+    std::vector<double> extended_kernel(original_size + 2 * pad_size, 0.0);
+
+    // Fill the center with the original kernel
+    std::copy(kernel.begin(), kernel.end(), extended_kernel.begin() + pad_size);
+
+    // Mirror padding on both sides
+    for (size_t i = 0; i < pad_size; ++i) {
+        extended_kernel[pad_size - 1 - i] = kernel[i];
+        extended_kernel[pad_size + original_size + i] = kernel[original_size - 1 - i];
+    }
+
+    // Normalize the extended kernel
+    double sum = std::accumulate(extended_kernel.begin(), extended_kernel.end(), 0.0);
+    if (sum > 0) {
+        for (double& val : extended_kernel) {
+            val /= sum;
+        }
+    }
+
+    return extended_kernel;
+}
+
 // Transform kernel based on energy
 std::vector<double> apply_kernel_transformation(
     const std::vector<double>& kernel,
@@ -30,8 +55,8 @@ std::vector<double> apply_kernel_transformation(
     const KernelParams& params) 
 {
     // Calculate energy-dependent shift and stretch
-    double shift = params.shift_offset + params.shift_slope * energy;
-    double stretch = params.stretch_offset + params.stretch_slope * energy;
+    double shift = params.shift_slope * (energy - params.shift_offset);
+    double stretch = params.stretch_slope * (energy - params.stretch_offset);
     
     std::vector<double> transformed_kernel(kernel.size());
     int middle = kernel.size() / 2;
@@ -78,6 +103,9 @@ std::vector<double> convolve_with_kernel(
     int kernel_size = kernel.size();
     int pad_size = kernel_size / 2;
 
+    // Extend and normalize the kernel
+    std::vector<double> extended_kernel = extend_and_normalize_kernel(kernel, pad_size);
+
     // Create a padded version of the input values
     std::vector<double> padded_values(values_size + 2 * pad_size, 0.0);
     std::copy(values.begin(), values.end(), padded_values.begin() + pad_size);
@@ -89,7 +117,7 @@ std::vector<double> convolve_with_kernel(
     for (int i = 0; i < values_size; ++i) {
         // Get transformed kernel for current energy
         std::vector<double> transformed_kernel = 
-            apply_kernel_transformation(kernel, energy_grid[i], kernel_params);
+            apply_kernel_transformation(extended_kernel, energy_grid[i], kernel_params);
             
         double conv_sum = 0.0;
         for (int j = 0; j < kernel_size; ++j) {
