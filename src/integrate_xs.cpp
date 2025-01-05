@@ -2,6 +2,7 @@
 #include <cmath>
 #include <algorithm>
 #include <numeric>
+#include "integrate_xs.h"
 
 // Linear interpolation function
 double linear_interp(const std::vector<double>& xs_energies, const std::vector<double>& xs_values, double energy) {
@@ -22,26 +23,77 @@ double linear_interp(const std::vector<double>& xs_energies, const std::vector<d
     return 0.0; // Default return in case of error
 }
 
-// Convolve the values with the kernel and return the result with the same size as the input
-std::vector<double> convolve_with_kernel(const std::vector<double>& values, const std::vector<double>& kernel) {
+// Transform kernel based on energy
+std::vector<double> apply_kernel_transformation(
+    const std::vector<double>& kernel,
+    double energy,
+    const KernelParams& params) 
+{
+    // Calculate energy-dependent shift and stretch
+    double shift = params.shift_offset + params.shift_slope * energy;
+    double stretch = params.stretch_offset + params.stretch_slope * energy;
+    
+    std::vector<double> transformed_kernel(kernel.size());
+    int middle = kernel.size() / 2;
+    
+    for (size_t i = 0; i < kernel.size(); ++i) {
+        // Apply stretch relative to the center of the kernel
+        int relative_pos = i - middle;
+        double stretched_pos = relative_pos * stretch;
+        
+        // Find the position after shifting
+        double final_pos = stretched_pos + shift + middle;
+        
+        // Linear interpolation between kernel points
+        if (final_pos >= 0 && final_pos < kernel.size() - 1) {
+            int lower_idx = static_cast<int>(final_pos);
+            double fraction = final_pos - lower_idx;
+            transformed_kernel[i] = kernel[lower_idx] * (1 - fraction) + 
+                                  kernel[lower_idx + 1] * fraction;
+        } else {
+            transformed_kernel[i] = 0.0;  // Out of bounds
+        }
+    }
+    
+    // Normalize the transformed kernel
+    double sum = std::accumulate(transformed_kernel.begin(), 
+                               transformed_kernel.end(), 0.0);
+    if (sum > 0) {
+        for (double& val : transformed_kernel) {
+            val /= sum;
+        }
+    }
+    
+    return transformed_kernel;
+}
+
+// Convolve with energy-dependent kernel
+std::vector<double> convolve_with_kernel(
+    const std::vector<double>& values,
+    const std::vector<double>& kernel,
+    const std::vector<double>& energy_grid,
+    const KernelParams& kernel_params) 
+{
     int values_size = values.size();
     int kernel_size = kernel.size();
-    int pad_size = kernel_size / 2; // Half of the kernel size for symmetric padding
+    int pad_size = kernel_size / 2;
 
     // Create a padded version of the input values
     std::vector<double> padded_values(values_size + 2 * pad_size, 0.0);
-    
-    // Copy original values into the padded vector
     std::copy(values.begin(), values.end(), padded_values.begin() + pad_size);
 
     // Result vector will have the same size as the original values
     std::vector<double> result(values_size, 0.0);
 
-    // Perform convolution
+    // Perform convolution with energy-dependent kernel
     for (int i = 0; i < values_size; ++i) {
+        // Get transformed kernel for current energy
+        std::vector<double> transformed_kernel = 
+            apply_kernel_transformation(kernel, energy_grid[i], kernel_params);
+            
         double conv_sum = 0.0;
         for (int j = 0; j < kernel_size; ++j) {
-            conv_sum += padded_values[i + j] * kernel[j];
+            conv_sum += padded_values[i + j] * transformed_kernel[j];
         }
         result[i] = conv_sum;
     }
@@ -53,7 +105,8 @@ std::vector<double> integrate_cross_section(
     const std::vector<double>& xs_energies,
     const std::vector<double>& xs_values,
     const std::vector<double>& energy_grid,
-    const std::vector<double>& kernel)
+    const std::vector<double>& kernel,
+    const KernelParams& kernel_params)
 {
     // Handle the case when xs_values has only one element
     if (xs_values.size() == 1) {
@@ -67,11 +120,13 @@ std::vector<double> integrate_cross_section(
     std::vector<double> extended_energy_grid = energy_grid;
     for (int i = 0; i < num_bins_to_add; ++i) {
         // Add prefix bin
-        double new_prefix = extended_energy_grid.front() * std::pow(extended_energy_grid.front() / extended_energy_grid[1], 1);
+        double new_prefix = extended_energy_grid.front() * 
+            std::pow(extended_energy_grid.front() / extended_energy_grid[1], 1);
         extended_energy_grid.insert(extended_energy_grid.begin(), new_prefix);
         
         // Add suffix bin
-        double new_suffix = extended_energy_grid.back() * std::pow(extended_energy_grid.back() / extended_energy_grid[extended_energy_grid.size() - 2], 1);
+        double new_suffix = extended_energy_grid.back() * 
+            std::pow(extended_energy_grid.back() / extended_energy_grid[extended_energy_grid.size() - 2], 1);
         extended_energy_grid.push_back(new_suffix);
     }
 
@@ -89,7 +144,7 @@ std::vector<double> integrate_cross_section(
 
         // Perform trapezoidal integration
         double integral = 0.5 * (linear_interp(xs_energies, xs_values, emin) + 
-                                 linear_interp(xs_energies, xs_values, emax)) * (emax - emin);
+                               linear_interp(xs_energies, xs_values, emax)) * (emax - emin);
 
         // Calculate the average cross-section for this bin
         double avg_xs = integral / (emax - emin);
@@ -98,7 +153,8 @@ std::vector<double> integrate_cross_section(
 
     // If a kernel is provided and its size is greater than 1, convolve the result
     if (kernel.size() > 1) {
-        integrated_values = convolve_with_kernel(integrated_values, kernel);
+        integrated_values = convolve_with_kernel(integrated_values, kernel, 
+                                               extended_energy_grid, kernel_params);
     }
 
     // Trim the result to match the original energy grid size
@@ -107,8 +163,10 @@ std::vector<double> integrate_cross_section(
         size_t extra = integrated_values.size() - expected_size;
         size_t to_remove_start = extra / 2;
         size_t to_remove_end = extra - to_remove_start;
-        integrated_values.erase(integrated_values.begin(), integrated_values.begin() + to_remove_start);
-        integrated_values.erase(integrated_values.end() - to_remove_end, integrated_values.end());
+        integrated_values.erase(integrated_values.begin(), 
+                              integrated_values.begin() + to_remove_start);
+        integrated_values.erase(integrated_values.end() - to_remove_end, 
+                              integrated_values.end());
     }
 
     // Ensure the result matches the original energy grid size
