@@ -5,7 +5,8 @@ import nres.utils as utils
 from typing import Dict, Union, List, Optional
 from copy import deepcopy
 import nres
-from nres._integrate_xs import integrate_cross_section
+from nres._integrate_xs import CrossSectionCalculator
+
 
 class CrossSection:
     """
@@ -73,6 +74,10 @@ class CrossSection:
         self.isotopes = {}
         self.n = 0.
         
+                
+        # Initialize the C++ calculator
+        self.calculator = CrossSectionCalculator()
+
         if isinstance(isotopes, CrossSection):
             self._init_from_cross_section(isotopes, name)
         elif isotopes:
@@ -83,6 +88,7 @@ class CrossSection:
         for mat_name, mat_data in materials.items():
             material_data = self._get_material_data(mat_data)
             self.add_material(mat_name, material_data, splitby, total_weight)
+
 
     def _load_xsdata(self):
         """Load cross-section data from file."""
@@ -325,6 +331,15 @@ class CrossSection:
             self.isotopes = self.weights.to_dict()
             
             self.n = self._update_atomic_density()
+        
+        if not self.table.empty:
+            energy_grid = self.table.index.values
+            xs_data = {col: self.table[col].values for col in self.table.columns 
+                    if col != 'total'}
+            
+            # Initialize the calculator with default parameters
+            self.calculator.initialize(energy_grid, self.L)
+            self.calculator.add_xs_data(energy_grid, xs_data)
 
     def __add__(self, other: 'CrossSection') -> 'CrossSection':
         """Add two CrossSection objects together."""
@@ -372,20 +387,32 @@ class CrossSection:
         """Right multiplication to support scalar * CrossSection."""
         return self.__mul__(total_weight)
 
-    def __call__(self, E: np.ndarray, weights: Optional[np.ndarray] = None, 
-                 response: Optional[np.ndarray] = None) -> np.ndarray:
-        """Calculate the weighted cross-section for given energy values."""
+
+    def __call__(self, E: np.ndarray, weights: Optional[np.ndarray] = None,
+            response: Optional[np.ndarray] = None, **kwargs) -> np.ndarray:
+        """Calculate the weighted cross-section for given energy values using C++ calculator.
+        
+        Args:
+            E: Energy values to calculate cross-sections for
+            weights: Optional weights for the isotopes
+            response: Optional response function
+            **kwargs: Additional parameters for calculate_xs (t0, L0, K, tau, x0)
+        """
         if weights is not None:
             self._set_weights(weights=weights)
-        if response is None:
-            response = [1.]
-        return np.array(integrate_cross_section(
-            self.table["total"].index.values, 
-            self.table["total"].values, 
-            E, 
-            response
-        ))
-    
+            
+        # Extract parameters from kwargs with defaults
+        t0 = kwargs.get('t0', 0.0)
+        L0 = kwargs.get('L0', 1.0)
+        K = kwargs.get('K', 1.0)
+        tau = kwargs.get('tau', 1.0)
+        x0 = kwargs.get('x0', 0.0)
+        
+        # Create the fractions dictionary from self.weights
+        fractions = self.weights.to_dict()
+        
+        # Calculate cross-sections using the C++ calculator
+        return np.array(self.calculator.calculate_xs(fractions, t0, L0, K, tau, x0))
 
     def _interleave_xs_energies(self,xs_data):
         """
