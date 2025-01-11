@@ -337,7 +337,6 @@ class CrossSection:
             xs_data = {col: self.table[col].values for col in self.table.columns 
                     if col != 'total'}
             self.set_energy_grid(energy_grid)
-            print(len(energy_grid))
             
             # Initialize the calculator with default parameters
             self.calculator.initialize(energy_grid, self.L)
@@ -402,6 +401,8 @@ class CrossSection:
         """
         if weights is not None:
             self._set_weights(weights=weights)
+
+        E = np.array(E)
             
         # Extract parameters from kwargs with defaults
         t0 = kwargs.get('t0', 0.0)
@@ -414,7 +415,7 @@ class CrossSection:
         fractions = self.weights.to_dict()
         
         # Calculate cross-sections using the C++ calculator
-        return np.array(self.calculator.calculate_xs(fractions, t0, L0, K, tau, x0))
+        return np.array(self.calculator.calculate_xs(E,fractions, t0, L0, K, tau, x0))
 
     def _interleave_xs_energies(self,xs_data):
         """

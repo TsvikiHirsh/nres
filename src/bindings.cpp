@@ -6,14 +6,6 @@
 namespace py = pybind11;
 
 PYBIND11_MODULE(_integrate_xs, m) {
-    // Bind the original function for backward compatibility
-    m.def("integrate_cross_section", &integrate_cross_section,
-          "Integrates cross-section data with optional response",
-          py::arg("xs_energies"),
-          py::arg("xs_values"),
-          py::arg("energy_grid"),
-          py::arg("response") = std::vector<double>{0., 1., 0.}
-    );
 
     // Bind the new CrossSectionCalculator class
     py::class_<CrossSectionCalculator>(m, "CrossSectionCalculator")
@@ -32,6 +24,7 @@ PYBIND11_MODULE(_integrate_xs, m) {
              py::arg("xs_data"))
         .def("calculate_xs", &CrossSectionCalculator::calculate_xs,
              "Calculate weighted cross-sections with time delay and response parameters",
+             py::arg("user_energy_grid"),
              py::arg("fractions"),
              py::arg("t0") = 0.0,
              py::arg("L0") = 1.0,

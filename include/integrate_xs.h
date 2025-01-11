@@ -24,7 +24,8 @@ public:
     void add_xs_data(const std::vector<double>& energies,
                      const std::map<std::string, std::vector<double>>& xs_data);
     
-    std::vector<double> calculate_xs(const std::map<std::string, double>& fractions,
+    std::vector<double> calculate_xs(const std::vector<double>& user_energy_grid,
+                                   const std::map<std::string, double>& fractions,
                                    double t0 = 0.0,
                                    double L0 = 1.0,
                                    double K = 1.0,
@@ -57,14 +58,8 @@ private:
                                            const std::vector<double>& kernel) const;
     
     std::vector<double> integrate_isotope_xs(const IsotopeData& isotope_data,
-                                           const std::vector<double>& kernel) const;
+                                           const std::vector<double>& kernel,
+                                           const std::vector<double>& user_energy_grid) const;
 };
-
-std::vector<double> integrate_cross_section(
-    const std::vector<double>& xs_energies,
-    const std::vector<double>& xs_values,
-    const std::vector<double>& energy_grid,
-    const std::vector<double>& response = std::vector<double>{0., 1., 0.}
-);
 
 #endif // INTEGRATE_XS_H

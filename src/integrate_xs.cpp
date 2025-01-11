@@ -45,6 +45,7 @@ void CrossSectionCalculator::add_xs_data(
 }
 
 std::vector<double> CrossSectionCalculator::calculate_xs(
+    const std::vector<double>& user_energy_grid,
     const std::map<std::string, double>& fractions,
     double t0, double L0, double K, double tau, double x0) const {
     
@@ -53,7 +54,7 @@ std::vector<double> CrossSectionCalculator::calculate_xs(
     x0 = (x0 != 0.0) ? x0 : default_x0;
     
     std::vector<double> response = calculate_response(t0, L0, K, tau, x0);
-    std::vector<double> total_xs(energy_grid.size(), 0.0);
+    std::vector<double> total_xs(user_energy_grid.size(), 0.0);
     
     for (const auto& isotope_name : isotope_names) {
         auto fraction_it = fractions.find(isotope_name);
@@ -62,7 +63,7 @@ std::vector<double> CrossSectionCalculator::calculate_xs(
         }
         
         const auto& isotope = isotope_xs_data.at(isotope_name);
-        std::vector<double> integrated = integrate_isotope_xs(isotope, response);
+        std::vector<double> integrated = integrate_isotope_xs(isotope, response, user_energy_grid);
         
         for (size_t j = 0; j < total_xs.size(); ++j) {
             total_xs[j] += integrated[j] * fraction_it->second;
@@ -72,13 +73,17 @@ std::vector<double> CrossSectionCalculator::calculate_xs(
     return total_xs;
 }
 
+
+
 std::vector<double> CrossSectionCalculator::integrate_isotope_xs(
     const IsotopeData& isotope_data,
-    const std::vector<double>& kernel) const {
+    const std::vector<double>& kernel,
+    const std::vector<double>& user_energy_grid = {}) const {
     
+    const std::vector<double>& grid_to_use = user_energy_grid.empty() ? energy_grid : user_energy_grid;
     int num_bins_to_add = kernel.empty() ? 0 : kernel.size() - 1;
 
-    std::vector<double> extended_grid = energy_grid;
+    std::vector<double> extended_grid = grid_to_use;
     for (int i = 0; i < num_bins_to_add; ++i) {
         double new_prefix = extended_grid.front() * 
                           std::pow(extended_grid.front() / extended_grid[1], 1);
@@ -108,7 +113,7 @@ std::vector<double> CrossSectionCalculator::integrate_isotope_xs(
         integrated_values.push_back(avg_xs);
     }
 
-    size_t expected_size = energy_grid.size();
+    size_t expected_size = grid_to_use.size();
     if (integrated_values.size() > expected_size) {
         size_t extra = integrated_values.size() - expected_size;
         size_t to_remove_start = extra / 2;
@@ -132,6 +137,7 @@ std::vector<double> CrossSectionCalculator::integrate_isotope_xs(
 
     return integrated_values;
 }
+
 
 std::vector<double> CrossSectionCalculator::convolve_with_kernel(
     const std::vector<double>& values,
@@ -171,25 +177,6 @@ double CrossSectionCalculator::linear_interp(
     return 0.0;
 }
 
-// Backward compatibility function implementation
-std::vector<double> integrate_cross_section(
-    const std::vector<double>& xs_energies,
-    const std::vector<double>& xs_values,
-    const std::vector<double>& energy_grid,
-    const std::vector<double>& response) {
-    
-    CrossSectionCalculator calc;
-    calc.initialize(energy_grid, 1.0);
-    
-    std::map<std::string, std::vector<double>> xs_data;
-    xs_data["temp"] = xs_values;
-    calc.add_xs_data(xs_energies, xs_data);
-    
-    std::map<std::string, double> fractions;
-    fractions["temp"] = 1.0;
-    
-    return calc.calculate_xs(fractions);
-}
 
 
 std::vector<double> CrossSectionCalculator::calculate_response(
