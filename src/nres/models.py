@@ -120,8 +120,17 @@ class TransmissionModel(lmfit.Model):
 
         n = self.n
 
+        print("E shape:", np.shape(E))
+    
+    
         # Transmission function
         xs = self.cross_section(E,weights=weights,response=response)
+
+        print("xs shape:", np.shape(xs))
+        print("thickness shape:", np.shape(thickness))
+        print("norm shape:", np.shape(norm))
+        print("bg shape:", np.shape(bg))
+
 
         T = norm * np.exp(- xs * thickness * n) * (1 - bg) + k*bg
         return T

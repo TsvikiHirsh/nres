@@ -11,6 +11,7 @@ void CrossSectionCalculator::initialize(const std::vector<double>& grid,
                                         double tau,
                                         double x0,
                                         double tstep) {
+                                       
     energy_grid = grid;
     flight_path = flight_path_length;
     default_K = K;
@@ -18,7 +19,6 @@ void CrossSectionCalculator::initialize(const std::vector<double>& grid,
     default_x0 = x0;
     this->tstep = tstep;
 }
-
 
 
 void CrossSectionCalculator::add_xs_data(

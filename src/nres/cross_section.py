@@ -336,6 +336,8 @@ class CrossSection:
             energy_grid = self.table.index.values
             xs_data = {col: self.table[col].values for col in self.table.columns 
                     if col != 'total'}
+            self.set_energy_grid(energy_grid)
+            print(len(energy_grid))
             
             # Initialize the calculator with default parameters
             self.calculator.initialize(energy_grid, self.L)
@@ -454,6 +456,43 @@ class CrossSection:
         
         return result
 
+    def __deepcopy__(self, memo):
+        """Create a deep copy of the CrossSection object."""
+        cls = self.__class__
+        result = cls.__new__(cls)
+        
+        # Store the new object in the memo dictionary
+        memo[id(self)] = result
+        
+        # Deep copy the instance dictionary
+        for k, v in self.__dict__.items():
+            # Skip calculator if it exists (can't be pickled)
+            if k != 'calculator':
+                setattr(result, k, deepcopy(v, memo))
+                
+        # Handle calculator separately if needed
+        if hasattr(self, 'calculator') and self.calculator is not None:
+            result.calculator = CrossSectionCalculator()  # Create new instance
+            
+            # Reinitialize the calculator with the copied data
+            if hasattr(self, '_energy_grid'):
+                result.calculator.initialize(self._energy_grid, self.L)
+                
+            # If we have xs_data, copy that too
+            if hasattr(self, '_xs_data'):
+                result.calculator.add_xs_data(self._energy_grid, deepcopy(self._xs_data, memo))
+                
+        return result
+    
+    def set_energy_grid(self, energy_grid):
+        self._energy_grid = energy_grid
+        if hasattr(self, 'calculator') and self.calculator is not None:
+            self.calculator.initialize(energy_grid, self.L)
+
+    def add_xs_data(self, energy_grid, xs_data):
+        self._xs_data = xs_data
+        if hasattr(self, 'calculator') and self.calculator is not None:
+            self.calculator.add_xs_data(energy_grid, xs_data)
     
     def plot(self, **kwargs):
         """
