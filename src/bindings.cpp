@@ -33,5 +33,9 @@ PYBIND11_MODULE(_integrate_xs, m) {
              py::arg("x0") = 0.0)
         .def("get_isotope_names", &CrossSectionCalculator::get_isotope_names)
         .def("get_energy_grid", &CrossSectionCalculator::get_energy_grid)
-        .def("get_flight_path", &CrossSectionCalculator::get_flight_path);
+        .def("get_flight_path", &CrossSectionCalculator::get_flight_path)
+        .def("get_response", &CrossSectionCalculator::get_response,
+               py::arg("t0"), py::arg("L0"), py::arg("K") = 1.0, py::arg("tau") = 1.0, py::arg("x0") = 0.0);
+
+
 }

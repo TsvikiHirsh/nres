@@ -35,6 +35,7 @@ public:
     std::vector<std::string> get_isotope_names() const { return isotope_names; }
     std::vector<double> get_energy_grid() const { return energy_grid; }
     double get_flight_path() const { return flight_path; }
+    std::vector<double> get_response(double t0, double L0, double K = 1.0, double tau = 1.0, double x0 = 0.0) const;
 
 private:    
     std::map<std::string, IsotopeData> isotope_xs_data;
@@ -60,6 +61,8 @@ private:
     std::vector<double> integrate_isotope_xs(const IsotopeData& isotope_data,
                                            const std::vector<double>& kernel,
                                            const std::vector<double>& user_energy_grid) const;
+    
+
 };
 
 #endif // INTEGRATE_XS_H

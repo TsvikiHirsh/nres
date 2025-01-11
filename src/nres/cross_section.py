@@ -389,14 +389,12 @@ class CrossSection:
         return self.__mul__(total_weight)
 
 
-    def __call__(self, E: np.ndarray, weights: Optional[np.ndarray] = None,
-            response: Optional[np.ndarray] = None, **kwargs) -> np.ndarray:
+    def __call__(self, E: np.ndarray, weights: Optional[np.ndarray] = None, **kwargs) -> np.ndarray:
         """Calculate the weighted cross-section for given energy values using C++ calculator.
         
         Args:
             E: Energy values to calculate cross-sections for
             weights: Optional weights for the isotopes
-            response: Optional response function
             **kwargs: Additional parameters for calculate_xs (t0, L0, K, tau, x0)
         """
         if weights is not None:
@@ -407,15 +405,15 @@ class CrossSection:
         # Extract parameters from kwargs with defaults
         t0 = kwargs.get('t0', 0.0)
         L0 = kwargs.get('L0', 1.0)
-        K = kwargs.get('K', 1.0)
-        tau = kwargs.get('tau', 1.0)
-        x0 = kwargs.get('x0', 0.0)
+        K = kwargs.get('K', 0.001)
+        τ = kwargs.get('τ', 5e-9)
+        x0 = kwargs.get('x0', 1e-9)
         
         # Create the fractions dictionary from self.weights
         fractions = self.weights.to_dict()
         
         # Calculate cross-sections using the C++ calculator
-        return np.array(self.calculator.calculate_xs(E,fractions, t0, L0, K, tau, x0))
+        return np.array(self.calculator.calculate_xs(E,fractions, t0, L0, K, τ, x0))
 
     def _interleave_xs_energies(self,xs_data):
         """

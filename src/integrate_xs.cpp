@@ -2,6 +2,7 @@
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
+#include <iostream>
 
 
 
@@ -135,6 +136,9 @@ std::vector<double> CrossSectionCalculator::integrate_isotope_xs(
     std::replace_if(integrated_values.begin(), integrated_values.end(),
                    [](double val) { return std::isnan(val); }, 0.0);
 
+    std::cout << "Energy grid size: " << energy_grid.size() 
+          << ", Kernel size: " << kernel.size() << "\n";
+
     return integrated_values;
 }
 
@@ -198,7 +202,7 @@ std::vector<double> CrossSectionCalculator::calculate_response(
     for (double t : tgrid) {
         // Implement exponnorm.pdf using the formula:
         // pdf = (K/2) * exp(K/2 * (2*mu + K*sigma^2 - 2*x) + log(erfc((mu + K*sigma^2 - x)/(sqrt(2)*sigma))))
-        double z = (t - x0) / tau;
+        // double z = (t - x0) / tau;
         double logpdf = std::log(K) - std::log(2.0) + 
                        (K/2.0) * (2.0*x0 + K*tau*tau - 2.0*t) + 
                        std::log(std::erfc((x0 + K*tau*tau - t)/(std::sqrt(2.0)*tau)));
@@ -218,16 +222,16 @@ std::vector<double> CrossSectionCalculator::calculate_response(
     int left_idx = center;
     int right_idx = center;
     
-    // Find symmetric bounds
-    while (left_idx > 0 && right_idx < static_cast<int>(response.size()) - 1) {
+
+    int max_iterations = static_cast<int>(response.size());
+    while (left_idx > 0 && right_idx < max_iterations - 1) {
         if (response[left_idx-1] < eps && response[right_idx+1] < eps) {
             break;
         }
-        if (response[left_idx-1] >= eps || response[right_idx+1] >= eps) {
-            left_idx--;
-            right_idx++;
-        }
+        left_idx = std::max(left_idx - 1, 0);
+        right_idx = std::min(right_idx + 1, max_iterations - 1);
     }
+
     
     // Ensure odd number of elements
     if ((right_idx - left_idx + 1) % 2 == 0) {
@@ -241,4 +245,13 @@ std::vector<double> CrossSectionCalculator::calculate_response(
     );
     
     return final_response;
+}
+
+std::vector<double> CrossSectionCalculator::get_response(
+    double t0, double L0, double K, double tau, double x0) const {
+    K = (K != 1.0) ? K : default_K;
+    tau = (tau != 1.0) ? tau : default_tau;
+    x0 = (x0 != 0.0) ? x0 : default_x0;
+
+    return calculate_response(t0, L0, K, tau, x0);
 }

@@ -119,12 +119,9 @@ class TransmissionModel(lmfit.Model):
         k = kwargs.get("k",1.) # background factor, relevant for some of the background models
 
         n = self.n
-
-        print("E shape:", np.shape(E))
-    
     
         # Transmission function
-        xs = self.cross_section(E,weights=weights,response=response)
+        xs = self.cross_section(E,weights=weights,**kwargs)
 
         T = norm * np.exp(- xs * thickness * n) * (1 - bg) + k*bg
         return T
