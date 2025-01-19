@@ -185,66 +185,133 @@ double CrossSectionCalculator::linear_interp(
 
 std::vector<double> CrossSectionCalculator::calculate_response(
     double t0, double L0, double K, double tau, double x0) const {
-    // Create time grid centered around t0
-    const int nbins = 300;  // Match Python implementation
-    std::vector<double> response;
-    response.reserve(2 * nbins + 1);
+    const int nbins = 300;
+    const double tstep = 1.5625e-9;  // Specified step size
     
-    // Create symmetric time grid around t0
+    // Create time grid
     std::vector<double> tgrid;
     tgrid.reserve(2 * nbins + 1);
     for (int i = -nbins; i <= nbins; i++) {
-        tgrid.push_back(i * tstep);
+        tgrid.push_back(x0 + i * tstep);
     }
     
-    // Calculate exponnorm response
-    double sum = 0.0;
-    for (double t : tgrid) {
-        // Implement exponnorm.pdf using the formula:
-        // pdf = (K/2) * exp(K/2 * (2*mu + K*sigma^2 - 2*x) + log(erfc((mu + K*sigma^2 - x)/(sqrt(2)*sigma))))
-        // double z = (t - x0) / tau;
-        double logpdf = std::log(K) - std::log(2.0) + 
-                       (K/2.0) * (2.0*x0 + K*tau*tau - 2.0*t) + 
-                       std::log(std::erfc((x0 + K*tau*tau - t)/(std::sqrt(2.0)*tau)));
-        double pdf = std::exp(logpdf);
-        response.push_back(pdf);
-        sum += pdf;
+    // First, create the Gaussian function
+    // sigma = tau for the Gaussian part
+    std::vector<double> gaussian;
+    gaussian.reserve(tgrid.size());
+    
+    // Create exponential function
+    // lambda = 1/(K*tau) for the exponential part
+    std::vector<double> exponential;
+    exponential.reserve(tgrid.size());
+    
+    double lambda = 1.0 / (K * tau);
+    double sigma = tau;
+    
+    // Calculate both functions centered at x0
+    double max_gauss = 0.0;
+    double max_exp = 0.0;
+    
+    for (size_t i = 0; i < tgrid.size(); i++) {
+        double t = tgrid[i] - x0;
+        
+        // Gaussian calculation in log space
+        double gauss_log = -0.5 * (t * t) / (sigma * sigma);
+        double gauss = std::exp(gauss_log);
+        gaussian.push_back(gauss);
+        max_gauss = std::max(max_gauss, gsuss);
+        
+        // Exponential calculation (only for t >= 0)
+        double exp_val = (t >= 0) ? std::exp(-lambda * t) : 0.0;
+        exponential.push_back(exp_val);
+        max_exp = std::max(max_exp, exp_val);
     }
     
-    // Normalize the response
-    for (double& val : response) {
-        val /= sum;
+    // Normalize both functions
+    for (double& g : gaussian) {
+        g /= (max_gauss * std::sqrt(2.0 * M_PI) * sigma);
     }
     
-    // Cut array symmetrically based on threshold
-    const double eps = 1.0e-6;  // Threshold from Python implementation
-    int center = response.size() / 2;
-    int left_idx = center;
-    int right_idx = center;
+    double exp_norm = lambda;  // Normalization factor for exponential
+    for (double& e : exponential) {
+        e *= exp_norm / max_exp;
+    }
     
-
-    int max_iterations = static_cast<int>(response.size());
-    while (left_idx > 0 && right_idx < max_iterations - 1) {
-        if (response[left_idx-1] < eps && response[right_idx+1] < eps) {
-            break;
+    // Perform the convolution
+    std::vector<double> response(tgrid.size(), 0.0);
+    int half_size = static_cast<int>(tgrid.size()) / 2;
+    
+    // Use the convolution theorem: conv(f,g) = IFFT(FFT(f) * FFT(g))
+    // For our purposes, direct convolution is sufficient given the size
+    for (int i = 0; i < static_cast<int>(tgrid.size()); i++) {
+        double conv_val = 0.0;
+        for (int j = std::max(0, i - half_size); 
+             j < std::min(static_cast<int>(tgrid.size()), i + half_size + 1); j++) {
+            int k = i - j;
+            if (k >= 0 && k < static_cast<int>(tgrid.size())) {
+                conv_val += gaussian[j] * exponential[k];
+            }
         }
-        left_idx = std::max(left_idx - 1, 0);
-        right_idx = std::min(right_idx + 1, max_iterations - 1);
-    }
-
-    
-    // Ensure odd number of elements
-    if ((right_idx - left_idx + 1) % 2 == 0) {
-        right_idx++;
+        response[i] = conv_val * tstep;  // Scale by time step for proper integration
     }
     
-    // Extract the final response
-    std::vector<double> final_response(
-        response.begin() + left_idx,
-        response.begin() + right_idx + 1
-    );
+    // // Normalize the final response
+    // double sum = 0.0;
+    // for (double val : response) {
+    //     sum += val;
+    // }
     
-    return final_response;
+    // if (sum > 0.0) {
+    //     for (double& val : response) {
+    //         val /= sum;
+    //     }
+    // }
+    
+    // // Find the center of mass
+    // double weighted_sum = 0.0;
+    // int max_idx = 0;
+    // double max_val = 0.0;
+    
+    // for (size_t i = 0; i < response.size(); i++) {
+    //     weighted_sum += response[i] * i;
+    //     if (response[i] > max_val) {
+    //         max_val = response[i];
+    //         max_idx = i;
+    //     }
+    // }
+    
+    // // Center and trim as before
+    // size_t center = response.size() / 2;
+    // int shift = static_cast<int>(center) - max_idx;
+    // if (shift != 0) {
+    //     std::rotate(response.begin(), 
+    //                response.begin() + (shift > 0 ? response.size() + shift : -shift), 
+    //                response.end());
+    // }
+    
+    // // Trim to significant values
+    // const double eps = 1.0e-6;
+    // int width = 0;
+    
+    // for (int i = 1; i <= static_cast<int>(center); i++) {
+    //     if (center + i >= response.size() || center - i < 0 ||
+    //         (response[center + i] < eps && response[center - i] < eps)) {
+    //         width = i - 1;
+    //         break;
+    //     }
+    // }
+    
+    // std::vector<double> final_response;
+    // if (width > 0) {
+    //     final_response.assign(
+    //         response.begin() + (center - width),
+    //         response.begin() + (center + width + 1)
+    //     );
+    // } else {
+    //     final_response = {0.0, 1.0, 0.0};
+    // }
+    
+    return response;
 }
 
 std::vector<double> CrossSectionCalculator::get_response(
