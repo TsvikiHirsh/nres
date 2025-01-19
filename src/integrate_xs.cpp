@@ -8,15 +8,15 @@
 
 void CrossSectionCalculator::initialize(const std::vector<double>& grid,
                                         double flight_path_length,
-                                        double K,
                                         double tau,
+                                        double sigma,
                                         double x0,
                                         double tstep) {
                                        
     energy_grid = grid;
     flight_path = flight_path_length;
-    default_K = K;
     default_tau = tau;
+    default_sigma = sigma;
     default_x0 = x0;
     this->tstep = tstep;
 }
@@ -48,13 +48,13 @@ void CrossSectionCalculator::add_xs_data(
 std::vector<double> CrossSectionCalculator::calculate_xs(
     const std::vector<double>& user_energy_grid,
     const std::map<std::string, double>& fractions,
-    double t0, double L0, double K, double tau, double x0) const {
+    double t0, double L0, double tau, double sigma, double x0) const {
     
-    K = (K != 1.0) ? K : default_K;
     tau = (tau != 1.0) ? tau : default_tau;
+    sigma = (sigma != 1.0) ? sigma : default_sigma;
     x0 = (x0 != 0.0) ? x0 : default_x0;
     
-    std::vector<double> response = calculate_response(t0, L0, K, tau, x0);
+    std::vector<double> response = calculate_response(t0, L0, tau, sigma, x0);
     std::vector<double> total_xs(user_energy_grid.size(), 0.0);
     
     for (const auto& isotope_name : isotope_names) {
@@ -182,143 +182,80 @@ double CrossSectionCalculator::linear_interp(
 }
 
 
-
 std::vector<double> CrossSectionCalculator::calculate_response(
-    double t0, double L0, double K, double tau, double x0) const {
+    double t0, double L0, double tau, double sigma, double x0) const {
     const int nbins = 300;
-    const double tstep = 1.5625e-9;  // Specified step size
+    const double tstep = 1.5625e-9;
+
+    tau = (tau != 1.0) ? tau : default_tau;
+    sigma = (sigma != 1.0) ? sigma : default_sigma;
+    x0 = (x0 != 0.0) ? x0 : default_x0;
     
-    // Create time grid
+    // Create time grid from -300 to 300
     std::vector<double> tgrid;
     tgrid.reserve(2 * nbins + 1);
     for (int i = -nbins; i <= nbins; i++) {
-        tgrid.push_back(x0 + i * tstep);
+        tgrid.push_back(i * tstep);
     }
     
-    // First, create the Gaussian function
-    // sigma = tau for the Gaussian part
-    std::vector<double> gaussian;
-    gaussian.reserve(tgrid.size());
-    
-    // Create exponential function
-    // lambda = 1/(K*tau) for the exponential part
+    // Create exponential term (only for x > 0)
     std::vector<double> exponential;
     exponential.reserve(tgrid.size());
     
-    double lambda = 1.0 / (K * tau);
-    double sigma = tau;
-    
-    // Calculate both functions centered at x0
-    double max_gauss = 0.0;
-    double max_exp = 0.0;
-    
-    for (size_t i = 0; i < tgrid.size(); i++) {
-        double t = tgrid[i] - x0;
-        
-        // Gaussian calculation in log space
-        double gauss_log = -0.5 * (t * t) / (sigma * sigma);
-        double gauss = std::exp(gauss_log);
-        gaussian.push_back(gauss);
-        max_gauss = std::max(max_gauss, gsuss);
-        
-        // Exponential calculation (only for t >= 0)
-        double exp_val = (t >= 0) ? std::exp(-lambda * t) : 0.0;
+    for (double t : tgrid) {
+        double x = (t - t0) / tau;
+        double exp_val = (x > 0) ? std::exp(-x) : 0.0;
         exponential.push_back(exp_val);
-        max_exp = std::max(max_exp, exp_val);
     }
     
-    // Normalize both functions
-    for (double& g : gaussian) {
-        g /= (max_gauss * std::sqrt(2.0 * M_PI) * sigma);
+    // Create Gaussian term
+    std::vector<double> gaussian;
+    gaussian.reserve(tgrid.size());
+    double gauss_norm = 1.0 / (sigma * std::sqrt(2.0 * M_PI));
+    
+    for (double t : tgrid) {
+        double x = (t - t0) / sigma;
+        gaussian.push_back(gauss_norm * std::exp(-0.5 * x * x));
     }
     
-    double exp_norm = lambda;  // Normalization factor for exponential
-    for (double& e : exponential) {
-        e *= exp_norm / max_exp;
-    }
-    
-    // Perform the convolution
+    // Perform convolution with correct window sliding
     std::vector<double> response(tgrid.size(), 0.0);
     int half_size = static_cast<int>(tgrid.size()) / 2;
     
-    // Use the convolution theorem: conv(f,g) = IFFT(FFT(f) * FFT(g))
-    // For our purposes, direct convolution is sufficient given the size
     for (int i = 0; i < static_cast<int>(tgrid.size()); i++) {
-        double conv_val = 0.0;
-        for (int j = std::max(0, i - half_size); 
-             j < std::min(static_cast<int>(tgrid.size()), i + half_size + 1); j++) {
-            int k = i - j;
+        double sum = 0.0;
+        for (int j = 0; j < static_cast<int>(tgrid.size()); j++) {
+            // Shift j to center the convolution window
+            int shifted_j = j - half_size;
+            int k = i - shifted_j;
+            
             if (k >= 0 && k < static_cast<int>(tgrid.size())) {
-                conv_val += gaussian[j] * exponential[k];
+                sum += gaussian[j] * exponential[k];
             }
         }
-        response[i] = conv_val * tstep;  // Scale by time step for proper integration
+        response[i] = sum * tstep;
     }
     
-    // // Normalize the final response
-    // double sum = 0.0;
-    // for (double val : response) {
-    //     sum += val;
-    // }
+    // Normalize the convolution result
+    double sum = 0.0;
+    for (double val : response) {
+        sum += val;
+    }
     
-    // if (sum > 0.0) {
-    //     for (double& val : response) {
-    //         val /= sum;
-    //     }
-    // }
-    
-    // // Find the center of mass
-    // double weighted_sum = 0.0;
-    // int max_idx = 0;
-    // double max_val = 0.0;
-    
-    // for (size_t i = 0; i < response.size(); i++) {
-    //     weighted_sum += response[i] * i;
-    //     if (response[i] > max_val) {
-    //         max_val = response[i];
-    //         max_idx = i;
-    //     }
-    // }
-    
-    // // Center and trim as before
-    // size_t center = response.size() / 2;
-    // int shift = static_cast<int>(center) - max_idx;
-    // if (shift != 0) {
-    //     std::rotate(response.begin(), 
-    //                response.begin() + (shift > 0 ? response.size() + shift : -shift), 
-    //                response.end());
-    // }
-    
-    // // Trim to significant values
-    // const double eps = 1.0e-6;
-    // int width = 0;
-    
-    // for (int i = 1; i <= static_cast<int>(center); i++) {
-    //     if (center + i >= response.size() || center - i < 0 ||
-    //         (response[center + i] < eps && response[center - i] < eps)) {
-    //         width = i - 1;
-    //         break;
-    //     }
-    // }
-    
-    // std::vector<double> final_response;
-    // if (width > 0) {
-    //     final_response.assign(
-    //         response.begin() + (center - width),
-    //         response.begin() + (center + width + 1)
-    //     );
-    // } else {
-    //     final_response = {0.0, 1.0, 0.0};
-    // }
+    if (sum > 0.0) {
+        for (double& val : response) {
+            val /= sum;
+        }
+    }
     
     return response;
 }
 
 std::vector<double> CrossSectionCalculator::get_response(
-    double t0, double L0, double K, double tau, double x0) const {
-    K = (K != 1.0) ? K : default_K;
+    double t0, double L0, double tau, double sigma, double x0) const {
     tau = (tau != 1.0) ? tau : default_tau;
+    sigma = (sigma != 1.0) ? sigma : default_sigma;
     x0 = (x0 != 0.0) ? x0 : default_x0;
 
-    return calculate_response(t0, L0, K, tau, x0);
+    return calculate_response(t0, L0, tau, sigma, x0);
 }

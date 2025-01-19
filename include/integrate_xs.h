@@ -16,9 +16,9 @@ public:
     
     void initialize(const std::vector<double>& grid, 
                    double flight_path_length = 10.59,
-                   double tstep = 1.5625e-9,
-                   double K = 1.0,
+                   double tstep = 1.5625e-9,                   
                    double tau = 1.0,
+                   double sigma = 1.0,
                    double x0 = 0.0);
     
     void add_xs_data(const std::vector<double>& energies,
@@ -28,14 +28,14 @@ public:
                                    const std::map<std::string, double>& fractions,
                                    double t0 = 0.0,
                                    double L0 = 1.0,
-                                   double K = 1.0,
                                    double tau = 1.0,
+                                   double sigma = 1.0,
                                    double x0 = 0.0) const;
     
     std::vector<std::string> get_isotope_names() const { return isotope_names; }
     std::vector<double> get_energy_grid() const { return energy_grid; }
     double get_flight_path() const { return flight_path; }
-    std::vector<double> get_response(double t0, double L0, double K = 1.0, double tau = 1.0, double x0 = 0.0) const;
+    std::vector<double> get_response(double t0, double L0, double tau = 1.0, double sigma = 1.0,double x0 = 0.0) const;
 
 private:    
     std::map<std::string, IsotopeData> isotope_xs_data;
@@ -43,7 +43,7 @@ private:
     std::vector<double> shared_energies;
     std::vector<std::string> isotope_names;
     double flight_path;
-    double default_K;
+    double default_sigma;
     double default_tau;
     double default_x0;
     double tstep; 
@@ -53,7 +53,7 @@ private:
                         double energy) const;
     
     std::vector<double> calculate_response(double t0, double L0, 
-                                         double K, double tau, double x0) const;
+                                         double tau, double sigma, double x0) const;
     
     std::vector<double> convolve_with_kernel(const std::vector<double>& values,
                                            const std::vector<double>& kernel) const;
