@@ -203,7 +203,7 @@ std::vector<double> CrossSectionCalculator::calculate_response(
     exponential.reserve(tgrid.size());
     
     for (double t : tgrid) {
-        double x = (t - t0) / tau;
+        double x = (t - x0) / tau;
         double exp_val = (x > 0) ? std::exp(-x) : 0.0;
         exponential.push_back(exp_val);
     }
@@ -214,7 +214,7 @@ std::vector<double> CrossSectionCalculator::calculate_response(
     double gauss_norm = 1.0 / (sigma * std::sqrt(2.0 * M_PI));
     
     for (double t : tgrid) {
-        double x = (t - t0) / sigma;
+        double x = (t - x0) / sigma;
         gaussian.push_back(gauss_norm * std::exp(-0.5 * x * x));
     }
     
