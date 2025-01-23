@@ -46,7 +46,7 @@ private:
     double default_sigma;
     double default_tau;
     double default_x0;
-    double tstep; 
+    double default_tstep; 
 
     double linear_interp(const std::vector<double>& xs_energies, 
                         const std::vector<double>& xs_values, 

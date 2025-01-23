@@ -339,7 +339,7 @@ class CrossSection:
             self.set_energy_grid(energy_grid)
             
             # Initialize the calculator with default parameters
-            self.calculator.initialize(energy_grid, self.L)
+            self.calculator.initialize(energy_grid, self.L, self.tstep)
             self.calculator.add_xs_data(energy_grid, xs_data)
 
     def __add__(self, other: 'CrossSection') -> 'CrossSection':
@@ -486,7 +486,7 @@ class CrossSection:
     def set_energy_grid(self, energy_grid):
         self._energy_grid = energy_grid
         if hasattr(self, 'calculator') and self.calculator is not None:
-            self.calculator.initialize(energy_grid, self.L)
+            self.calculator.initialize(energy_grid, self.L, self.tstep)
 
     def add_xs_data(self, energy_grid, xs_data):
         self._xs_data = xs_data
