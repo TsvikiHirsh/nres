@@ -258,7 +258,36 @@ std::vector<double> CrossSectionCalculator::calculate_response(
         }
     }
     
-    return response;
+    // Cut array symmetrically based on threshold
+    const double eps = 1.0e-6;  // Threshold from Python implementation
+    int center = response.size() / 2;
+    int left_idx = center;
+    int right_idx = center;
+    
+    // Find symmetric bounds
+    while (left_idx > 0 && right_idx < static_cast<int>(response.size()) - 1) {
+        if (response[left_idx-1] < eps && response[right_idx+1] < eps) {
+            break;
+        }
+        if (response[left_idx-1] >= eps || response[right_idx+1] >= eps) {
+            left_idx--;
+            right_idx++;
+        }
+    }
+    
+    // Ensure odd number of elements
+    if ((right_idx - left_idx + 1) % 2 == 0) {
+        right_idx++;
+    }
+    
+    // Extract the final response
+    std::vector<double> final_response(
+        response.begin() + left_idx,
+        response.begin() + right_idx + 1
+    );
+    
+    return final_response;
+
 }
 
 std::vector<double> CrossSectionCalculator::get_response(
