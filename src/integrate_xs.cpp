@@ -9,15 +9,19 @@
 void CrossSectionCalculator::initialize(const std::vector<double>& grid,
                                         double flight_path_length,
                                         double tstep,
-                                        double tau,
-                                        double sigma,
+                                        double tau0,
+                                        double tau1,
+                                        double tau2,
+                                        double sigma0,
+                                        double sigma1,
+                                        double sigma2,
                                         double x0) {
     energy_grid = grid;
     flight_path = flight_path_length;
     default_tstep = tstep;  // This line ensures the default value is set
-    default_tau = tau;
-    default_sigma = sigma;
-    default_x0 = x0;
+    // default_tau = tau;
+    // default_sigma = sigma;
+    // default_x0 = x0;
 }
 
 
@@ -47,10 +51,13 @@ void CrossSectionCalculator::add_xs_data(
 std::vector<double> CrossSectionCalculator::calculate_xs(
     const std::vector<double>& user_energy_grid,
     const std::map<std::string, double>& fractions,
-    double t0, double L0, double tau, double sigma, double x0) const {
+    double t0, double L0, double tau0, double tau1, double tau2,
+                          double sigma0, double sigma1, double sigma2,
+                          double x0) const {
     
     
-    std::vector<double> response = calculate_response(t0, L0, tau, sigma, x0);
+    std::vector<double> response = calculate_response(t0, L0, tau0, tau1, tau2,
+                                                             sigma0, sigma1, sigma2, x0);
     std::vector<double> total_xs(user_energy_grid.size(), 0.0);
     
     for (const auto& isotope_name : isotope_names) {
@@ -179,11 +186,16 @@ double CrossSectionCalculator::linear_interp(
 
 
 std::vector<double> CrossSectionCalculator::calculate_response(
-    double t0, double L0, double tau, double sigma, double x0) const {
+    double t0, double L0,double tau0,double tau1,double tau2,
+                         double sigma0,double sigma1,double sigma2,
+                         double x0) const {
     const int nbins = 300;
     // const double tstep = 1.5625e-9;
     // std::cout<<"tstep "<<default_tstep<<std::endl;
     const double tstep = default_tstep;
+    double energy = 1.0;
+
+
     
     // Create time grid from -300 to 300
     std::vector<double> tgrid;
@@ -195,6 +207,7 @@ std::vector<double> CrossSectionCalculator::calculate_response(
     // Create exponential term (only for x > 0)
     std::vector<double> exponential;
     exponential.reserve(tgrid.size());
+    double tau = tau0 + tau1 * energy + tau2 * std::log(energy);
     
     for (double t : tgrid) {
         double x = (t - x0) / tau;
@@ -205,6 +218,9 @@ std::vector<double> CrossSectionCalculator::calculate_response(
     // Create Gaussian term
     std::vector<double> gaussian;
     gaussian.reserve(tgrid.size());
+
+    double sigma = sigma0 + sigma1 * energy + sigma2 * std::log(energy);
+
     double gauss_norm = 1.0 / (sigma * std::sqrt(2.0 * M_PI));
     
     for (double t : tgrid) {
@@ -246,7 +262,11 @@ std::vector<double> CrossSectionCalculator::calculate_response(
 }
 
 std::vector<double> CrossSectionCalculator::get_response(
-    double t0, double L0, double tau, double sigma, double x0) const {
+    double t0, double L0, double tau0,double tau1,double tau2,
+                         double sigma0,double sigma1,double sigma2,
+                         double x0) const {
 
-    return calculate_response(t0, L0, tau, sigma, x0);
+    return calculate_response(t0, L0, tau0, tau1, tau2,
+                                    sigma0, sigma1, sigma2,
+                                    x0);
 }

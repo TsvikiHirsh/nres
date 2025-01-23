@@ -109,7 +109,7 @@ class TransmissionModel(lmfit.Model):
         """
         E = self._tof_correction(E,**kwargs)
 
-        response = self.response.function(**kwargs)
+        # response = self.response.function(**kwargs)
 
         weights = deepcopy(self.cross_section.weights)
         weights = [kwargs.pop(key.replace("_",""),val) for key,val in weights.items()]

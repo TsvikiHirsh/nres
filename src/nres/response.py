@@ -12,7 +12,7 @@ class Response:
         Initializes the Response object with specified parameters.
 
         Parameters:
-        kind (str): The type of response function to use. Options are 'expo_gauss' or 'none'.
+        kind (str): The type of response function to use. Options are 'expo_gauss', 'gauss_exp_conv', 'gauss_exp_extended' or 'none'.
         vary (bool): If True, the parameters can vary during fitting. Default is False.
         eps (float): The threshold for cutting the response array symmetrically. Default is 1.0e-6.
         tstep (float): The time step for the response function. Default is 1.56255e-9 seconds.
@@ -33,10 +33,34 @@ class Response:
                 ('x0', 1e-9, vary),         # Location parameter (Gaussian)
                 ('τ', 1e-9, True, 1e-10)    # Exponential scale parameter
             )
+        elif kind == "gauss_exp_conv":
+            self.function = self.gauss_exp_conv_response
+            self.params = lmfit.Parameters()
+            self.params.add_many(
+                ('τ', 1.0e-9, vary, 1e-10),  # Exponential shape parameter
+                # ('τ1', 0., vary),  # Exponential shape parameter
+                # ('τ2', 0., vary),  # Exponential shape parameter
+                ('σ', 1.0e-9, vary, 1e-10),  # gaussian shape parameter
+                # ('σ1', 0., vary),  # Exponential shape parameter
+                # ('σ2', 0., vary),  # Exponential shape parameter
+                ('x0', 0, False),         # Location parameter (Gaussian)
+            )
+        elif kind == "gauss_exp_extended":
+            self.function = self.gauss_exp_conv_extended
+            self.params = lmfit.Parameters()
+            self.params.add_many(
+                ('τ0', 1.0e-9, vary, 1e-10),  # Exponential shape parameter
+                ('τ1', 0., vary),  # Exponential shape parameter
+                ('τ2', 0., vary),  # Exponential shape parameter
+                ('σ0', 1.0e-9, vary, 1e-10),  # gaussian shape parameter
+                ('σ1', 0., vary),  # Exponential shape parameter
+                ('σ2', 0., vary),  # Exponential shape parameter
+                ('x0', 0, False),         # Location parameter (Gaussian)
+            )
         elif kind == "none":
             self.function = self.empty_response
         else:
-            raise NotImplementedError(f"Response kind '{kind}' is not supported. Use 'expo_gauss' or 'none'.")
+            raise NotImplementedError(f"Response kind '{kind}' is not supported. Use 'expo_gauss', 'gauss_exp_conv', 'gauss_exp_extended' or 'none'.")
 
     def register_response(self, response_func, lmfit_params=None, **kwargs):
         """
@@ -109,6 +133,40 @@ class Response:
         response = exponnorm.pdf(self.tgrid, K, loc=x0, scale=τ)
         response /= np.sum(response)
         return self.cut_array_symmetric(response, self.eps)
+
+    def gauss_exp_conv_response(self, τ=1.0e-9, σ=1.0e-9, x0=0., **kwargs):
+        """
+        Computes the Gaussian-exponential convolution response function.
+        Inputs:
+            τ (float): Exponential scale parameter.
+            σ (float): Gaussian standard deviation.
+            x0 (float): Location parameter for the Gaussian.
+
+        Returns:
+            list of parametrs to be passed to the cpp response function.
+        """
+        return τ,0.,0.,σ,0.,0.,x0
+
+    def gauss_exp_conv_extended(self, τ0=1.0e-9, τ1=0., τ2=0.,
+                                      σ0=1.0e-9, σ1=0., σ2=0., 
+                                      x0=0., **kwargs):
+        """
+        Computes the extended Gaussian-exponential convolution response function.
+
+        Inputs:
+            τ0 (float): Exponential scale parameter.
+            τ1 (float): Exponential scale parameter.
+            τ2 (float): Exponential scale parameter.
+            σ0 (float): Gaussian standard deviation.
+            σ1 (float): Gaussian standard deviation.
+            σ2 (float): Gaussian standard deviation.
+            x0 (float): Location parameter for the Gaussian.
+
+        Returns:
+            list of parametrs to be passed to the cpp response function.
+        """
+        return τ0,τ1,τ2,σ0,σ1,σ2,x0
+
 
     def plot(self, params=None, **kwargs):
         """

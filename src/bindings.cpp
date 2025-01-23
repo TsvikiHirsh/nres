@@ -15,8 +15,12 @@ PYBIND11_MODULE(_integrate_xs, m) {
              py::arg("grid"),
              py::arg("flight_path_length") = 10.59,
              py::arg("tstep") = 1.5625e-9,
-             py::arg("tau") = 1.0,
-             py::arg("sigma") = 1.0,
+             py::arg("tau0") = 1.0e-9,
+             py::arg("tau1") = 0.0,
+             py::arg("tau2") = 0.0,
+             py::arg("sigma0") = 1.0e-9,
+             py::arg("sigma1") = 0.0,
+             py::arg("sigma2") = 0.0,
              py::arg("x0") = 0.0)
         .def("add_xs_data", &CrossSectionCalculator::add_xs_data,
              "Add cross-section data from DataFrame-like structure",
@@ -28,14 +32,26 @@ PYBIND11_MODULE(_integrate_xs, m) {
              py::arg("fractions"),
              py::arg("t0") = 0.0,
              py::arg("L0") = 1.0,
-             py::arg("tau") = 1e-9,
-             py::arg("sigma") = 1e-9,
+             py::arg("tau0") = 1.0e-9,
+             py::arg("tau1") = 0.0,
+             py::arg("tau2") = 0.0,
+             py::arg("sigma0") = 1.0e-9,
+             py::arg("sigma1") = 0.0,
+             py::arg("sigma2") = 0.0,
              py::arg("x0") = 0.0)
         .def("get_isotope_names", &CrossSectionCalculator::get_isotope_names)
         .def("get_energy_grid", &CrossSectionCalculator::get_energy_grid)
         .def("get_flight_path", &CrossSectionCalculator::get_flight_path)
         .def("get_response", &CrossSectionCalculator::get_response,
-               py::arg("t0"), py::arg("L0"),  py::arg("tau") = 1e-9, py::arg("sigma") = 1e-9, py::arg("x0") = 0.0);
+               py::arg("t0"), 
+               py::arg("L0"),  
+               py::arg("tau0") = 1.0e-9,
+               py::arg("tau1") = 0.0,
+               py::arg("tau2") = 0.0,
+               py::arg("sigma0") = 1.0e-9,
+               py::arg("sigma1") = 0.0,
+               py::arg("sigma2") = 0.0, 
+               py::arg("x0") = 0.0);
 
 
 }

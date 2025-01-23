@@ -405,15 +405,26 @@ class CrossSection:
         # Extract parameters from kwargs with defaults
         t0 = kwargs.get('t0', 0.0)
         L0 = kwargs.get('L0', 1.0)
-        K = kwargs.get('K', 0.001)
-        τ = kwargs.get('τ', 5e-9)
-        x0 = kwargs.get('x0', 1e-9)
+        if "τ0" in kwargs:
+            τ0 = kwargs.get('τ0', 1e-9) 
+        else:
+            τ0 = kwargs.get('τ', 1e-9)
+        if "σ0" in kwargs:
+            σ0 =  kwargs.get('σ0', 1e-9)
+        else: 
+            σ0 = kwargs.get('σ', 1e-9)
+        τ1 = kwargs.get('τ1', 0.)
+        τ2 = kwargs.get('τ2', 0.)
+        σ1 = kwargs.get('σ1', 0.)
+        σ2 = kwargs.get('σ2', 0.)
+        x0 = kwargs.get('x0', 0)
         
         # Create the fractions dictionary from self.weights
         fractions = self.weights.to_dict()
         
         # Calculate cross-sections using the C++ calculator
-        return np.array(self.calculator.calculate_xs(E,fractions, t0, L0, K, τ, x0))
+        return np.array(self.calculator.calculate_xs(E, fractions, t0, L0, τ0 , τ1, τ2,
+                                                                   σ0, σ1, σ2, x0))
 
     def _interleave_xs_energies(self,xs_data):
         """
