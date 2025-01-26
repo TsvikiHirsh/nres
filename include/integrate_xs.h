@@ -66,7 +66,7 @@ private:
     std::vector<double> calculate_response(double t0, double L0, 
                                          double tau0, double tau1, double tau2, 
                                          double sigma0, double sigma1 ,double sigma2,
-                                         double x0) const;
+                                         double x0,double energy) const;
     
     std::vector<double> convolve_with_kernel(const std::vector<double>& values,
                                            const std::vector<double>& kernel) const;

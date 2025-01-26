@@ -51,26 +51,39 @@ void CrossSectionCalculator::add_xs_data(
 std::vector<double> CrossSectionCalculator::calculate_xs(
     const std::vector<double>& user_energy_grid,
     const std::map<std::string, double>& fractions,
-    double t0, double L0, double tau0, double tau1, double tau2,
-                          double sigma0, double sigma1, double sigma2,
-                          double x0) const {
+    double t0, double L0, 
+    double tau0, double tau1, double tau2,
+    double sigma0, double sigma1, double sigma2,
+    double x0) const {
     
-    
-    std::vector<double> response = calculate_response(t0, L0, tau0, tau1, tau2,
-                                                             sigma0, sigma1, sigma2, x0);
     std::vector<double> total_xs(user_energy_grid.size(), 0.0);
     
-    for (const auto& isotope_name : isotope_names) {
-        auto fraction_it = fractions.find(isotope_name);
-        if (fraction_it == fractions.end()) {
-            throw std::invalid_argument("Missing fraction for isotope: " + isotope_name);
-        }
+    for (size_t i = 0; i < user_energy_grid.size(); ++i) {
+        double current_energy = user_energy_grid[i];
         
-        const auto& isotope = isotope_xs_data.at(isotope_name);
-        std::vector<double> integrated = integrate_isotope_xs(isotope, response, user_energy_grid);
+        // Calculate response for the current energy
+        std::vector<double> response = calculate_response(
+            t0, L0, 
+            tau0, tau1, tau2, 
+            sigma0, sigma1, sigma2, 
+            x0, 
+            current_energy  // Pass the current energy
+        );
         
-        for (size_t j = 0; j < total_xs.size(); ++j) {
-            total_xs[j] += integrated[j] * fraction_it->second;
+        for (const auto& isotope_name : isotope_names) {
+            auto fraction_it = fractions.find(isotope_name);
+            if (fraction_it == fractions.end()) {
+                throw std::invalid_argument("Missing fraction for isotope: " + isotope_name);
+            }
+            
+            const auto& isotope = isotope_xs_data.at(isotope_name);
+            std::vector<double> integrated = integrate_isotope_xs(
+                isotope, 
+                response, 
+                {current_energy}  // Pass current energy as single-element grid
+            );
+            
+            total_xs[i] += integrated[0] * fraction_it->second;
         }
     }
     
@@ -188,12 +201,12 @@ double CrossSectionCalculator::linear_interp(
 std::vector<double> CrossSectionCalculator::calculate_response(
     double t0, double L0,double tau0,double tau1,double tau2,
                          double sigma0,double sigma1,double sigma2,
-                         double x0) const {
+                         double x0,double energy) const {
     const int nbins = 300;
     // const double tstep = 1.5625e-9;
     // std::cout<<"tstep "<<default_tstep<<std::endl;
     const double tstep = default_tstep;
-    double energy = 1.0;
+    // double energy = 1.0;
 
 
     
@@ -297,5 +310,5 @@ std::vector<double> CrossSectionCalculator::get_response(
 
     return calculate_response(t0, L0, tau0, tau1, tau2,
                                     sigma0, sigma1, sigma2,
-                                    x0);
+                                    x0, 1.0);
 }
