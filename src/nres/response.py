@@ -7,12 +7,13 @@ import lmfit
 import inspect
 
 class Response:
-    def __init__(self, kind="expo_gauss", vary: bool = False, eps: float = 1.0e-6,
+    def __init__(self, xs=None ,kind="expo_gauss", vary: bool = False, eps: float = 1.0e-6,
                  tstep=1.56255e-9, nbins=300):
         """
         Initializes the Response object with specified parameters.
 
         Parameters:
+        xs (CrossSection): The cross section object.
         kind (str): The type of response function to use. Options are 'expo_gauss', 'gauss_exp_conv', 'gauss_exp_extended' or 'none'.
         vary (bool): If True, the parameters can vary during fitting. Default is False.
         eps (float): The threshold for cutting the response array symmetrically. Default is 1.0e-6.
@@ -24,7 +25,8 @@ class Response:
         self.tgrid = self.grid * self.tstep
         self.eps = eps
         self.params = lmfit.Parameters()
-        self._cross_section = CrossSection(tstep=self.tstep) # instance for plotting purposes
+        self.calculator = xs.calculator
+        # self._cross_section = CrossSection(tstep=self.tstep) # instance for plotting purposes
 
         # Choose the response function
         if kind == "expo_gauss":
@@ -147,7 +149,7 @@ class Response:
         Returns:
             list of parametrs to be passed to the cpp response function.
         """
-        return self._cross_section.calculator.get_response(0.,1.,τ,0.,0.,σ,0.,0.,x0)
+        return self.calculator.get_response(0.,1.,τ,0.,0.,σ,0.,0.,x0)
 
 
     def gauss_exp_conv_extended(self, τ0=1.0e-9, τ1=0., τ2=0.,
@@ -168,7 +170,7 @@ class Response:
         Returns:
             list of parametrs to be passed to the cpp response function.
         """
-        return self._cross_section.calculator.get_response(0.,1.,τ0,τ1,τ2,σ0,σ1,σ2,x0)
+        return self.calculator.get_response(0.,1.,τ0,τ1,τ2,σ0,σ1,σ2,x0)
 
 
 

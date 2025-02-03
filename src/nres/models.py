@@ -61,7 +61,7 @@ class TransmissionModel(lmfit.Model):
             self.params += self._make_tof_params(vary=vary_tof,**kwargs)
 
 
-        self.response = Response(kind=response,vary=vary_response,
+        self.response = Response(self.cross_section,kind=response,vary=vary_response,
                                  tstep=self.cross_section.tstep)
         if vary_response is not None:
             self.params += self.response.params
@@ -168,7 +168,6 @@ class TransmissionModel(lmfit.Model):
             fit_result = super().fit(data, params=params, **kwargs)
         self.fit_result = fit_result
         # switch method names
-        fit_result.plot_results = deepcopy(fit_result.plot)
         fit_result.plot = self.plot
         fit_result.weighted_thickness = self.weighted_thickness
 
