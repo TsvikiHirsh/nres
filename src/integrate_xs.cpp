@@ -51,26 +51,33 @@ void CrossSectionCalculator::add_xs_data(
 std::vector<double> CrossSectionCalculator::calculate_xs(
     const std::vector<double>& user_energy_grid,
     const std::map<std::string, double>& fractions,
-    double t0, double L0, 
+    double t0, double L0,
     double tau0, double tau1, double tau2,
     double sigma0, double sigma1, double sigma2,
     double x0) const {
     
+    // std::cerr << "Starting calculate_xs with " << user_energy_grid.size() << " energy points\n";
+    // std::cerr << "Parameters: t0=" << t0 << ", L0=" << L0 << "\n";
+              
     std::vector<double> total_xs(user_energy_grid.size(), 0.0);
     
     for (size_t i = 0; i < user_energy_grid.size(); ++i) {
         double current_energy = user_energy_grid[i];
+        // std::cerr << "\nProcessing energy point " << i << ": E=" << current_energy << " eV\n";
         
-        // Calculate response for the current energy
         std::vector<double> response = calculate_response(
-            t0, L0, 
-            tau0, tau1, tau2, 
-            sigma0, sigma1, sigma2, 
-            x0, 
-            current_energy  // Pass the current energy
+            t0, L0, tau0, tau1, tau2, sigma0, sigma1, sigma2, x0, current_energy
         );
         
+        // std::cerr << "Response size: " << response.size() << "\n";
+        // if (!response.empty()) {
+        //     std::cerr << "First response value: " << response.front() 
+        //              << ", Last value: " << response.back() << "\n";
+        // }
+        
         for (const auto& isotope_name : isotope_names) {
+            // std::cerr << "Processing isotope: " << isotope_name << "\n";
+            
             auto fraction_it = fractions.find(isotope_name);
             if (fraction_it == fractions.end()) {
                 throw std::invalid_argument("Missing fraction for isotope: " + isotope_name);
@@ -78,13 +85,16 @@ std::vector<double> CrossSectionCalculator::calculate_xs(
             
             const auto& isotope = isotope_xs_data.at(isotope_name);
             std::vector<double> integrated = integrate_isotope_xs(
-                isotope, 
-                response, 
-                {current_energy}  // Pass current energy as single-element grid
+                isotope, response, {current_energy}
             );
+            
+            // std::cerr << "Fraction: " << fraction_it->second 
+            //          << ", Integrated XS: " << integrated[0] << "\n";
             
             total_xs[i] += integrated[0] * fraction_it->second;
         }
+        
+        // std::cerr << "Total XS at energy point " << i << ": " << total_xs[i] << "\n";
     }
     
     return total_xs;
@@ -102,14 +112,28 @@ std::vector<double> CrossSectionCalculator::integrate_isotope_xs(
 
     std::vector<double> extended_grid = grid_to_use;
     for (int i = 0; i < num_bins_to_add; ++i) {
-        double new_prefix = extended_grid.front() * 
-                          std::pow(extended_grid.front() / extended_grid[1], 1);
+        double front = extended_grid.front();
+        double second = extended_grid[1];
+
+        double back = extended_grid.back();
+        double second_last = extended_grid[extended_grid.size() - 2];
+
+        // Fix potential division by zero or invalid pow()
+        double new_prefix = (second > 0 && front > 0) ? front * (front / second) : front * 0.9;
+        double new_suffix = (second_last > 0 && back > 0) ? back * (back / second_last) : back * 1.1;
+
+        // Ensure prefix/suffix are positive and finite
+        if (!std::isfinite(new_prefix) || new_prefix <= 0) {
+            new_prefix = front * 0.9; // Slightly shrink
+        }
+        if (!std::isfinite(new_suffix) || new_suffix <= 0) {
+            new_suffix = back * 1.1;  // Slightly grow
+        }
+
         extended_grid.insert(extended_grid.begin(), new_prefix);
-        
-        double new_suffix = extended_grid.back() * 
-                          std::pow(extended_grid.back() / extended_grid[extended_grid.size() - 2], 1);
         extended_grid.push_back(new_suffix);
     }
+
 
     std::vector<double> integrated_values;
     for (size_t i = 0; i < extended_grid.size() - 1; ++i) {
