@@ -1,7 +1,7 @@
 from setuptools import setup, Extension, find_packages
 import pybind11
 
-# Define the extension module
+# Define the extension module with FFTW linkage
 ext_modules = [
     Extension(
         "nres._integrate_xs",
@@ -10,6 +10,9 @@ ext_modules = [
             pybind11.get_include(),  # Include Pybind11 headers
             "include"  # Add the 'include' folder where your header files are located
         ],
+        libraries=["fftw3"],  # Link against FFTW3
+        extra_compile_args=["-std=c++17"],  # Ensure C++17 support
+        extra_link_args=["-lfftw3"],  # Explicitly link FFTW3
     )
 ]
 
@@ -30,5 +33,3 @@ setup(
     ext_modules=ext_modules,
     zip_safe=False,
 )
-
-
