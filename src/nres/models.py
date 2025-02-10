@@ -14,6 +14,7 @@ class TransmissionModel(lmfit.Model):
     def __init__(self, cross_section, 
                         response: str = "expo_gauss",
                         background: str = "polynomial3",
+                        tof_calibration: str = "linear",
                         vary_weights: bool = None, 
                         vary_background: bool = None, 
                         vary_tof: bool = None,
@@ -28,6 +29,8 @@ class TransmissionModel(lmfit.Model):
             A function that takes energy (E) as input and returns the cross section.
         response : str, optional
             The type of response function to use, by default "expo_gauss".
+        tof_calibration : str, optional
+            The type of TOF calibration to use, by default "linear". other options are "full" to include the energy dependent corrections.
         background : str, optional
             The type of background function to use, by default "polynomial3".
         vary_weights : bool, optional
@@ -58,7 +61,7 @@ class TransmissionModel(lmfit.Model):
         if vary_weights is not None:
             self.params += self._make_weight_params(vary=vary_weights)
         if vary_tof is not None:
-            self.params += self._make_tof_params(vary=vary_tof,**kwargs)
+            self.params += self._make_tof_params(vary=vary_tof,kind=tof_calibration,**kwargs)
 
 
         self.response = Response(kind=response,vary=vary_response,
@@ -233,7 +236,9 @@ class TransmissionModel(lmfit.Model):
         if correct_tof and "L0" in params and "t0" in params:
             L0 = params["L0"].value
             t0 = params["t0"].value
-            energy = self._tof_correction(energy, L0=L0, t0=t0)
+            t1 = params["t1"].value if "t1" in params else 0.0
+            t2 = params["t2"].value if "t2" in params else 0.0
+            energy = self._tof_correction(energy, L0=L0, t0=t0, t1=t1, t2=t2)
 
         # Plot settings
         color = kwargs.pop("color", "seagreen")
@@ -287,7 +292,8 @@ class TransmissionModel(lmfit.Model):
         return thickness * weights
 
     
-    def _make_tof_params(self, vary: bool = False, t0: float = 0., L0: float = 1.):
+    def _make_tof_params(self, vary: bool = False, kind:str = "linear", L0: float = 1.,
+                                 t0: float = 0.,t1: float = 0., t2: float = 0.):
         """
         Create time-of-flight (TOF) parameters for the model.
 
@@ -295,10 +301,17 @@ class TransmissionModel(lmfit.Model):
         ----------
         vary : bool, optional
             Whether to allow these parameters to vary during fitting, by default False.
-        t0 : float, optional
-            Initial time offset parameter, by default 0.
+        kind : str, optional
+            The type of TOF correction to apply, by default "linear". other options are "full" to include the energy dependent corrections.
         L0 : float, optional
             Initial flight path distance scale parameter, by default 1.
+        t0 : float, optional
+            Initial time offset parameter, by default 0.
+        t1 : float, optional
+            Initial linear correction parameter, by default 0.
+        t2 : float, optional
+            Initial logarithmic correction parameter, by default 0.
+
 
         Returns
         -------
@@ -308,6 +321,9 @@ class TransmissionModel(lmfit.Model):
         params = lmfit.Parameters()
         params.add("L0", value=L0, min=0.5, max= 1.5, vary=vary)
         params.add("t0", value=t0, vary=vary)
+        if kind == "full":
+            params.add("t1", value=t1, vary=vary)
+            params.add("t2", value=t2, vary=vary)
         return params
 
 
@@ -432,7 +448,8 @@ class TransmissionModel(lmfit.Model):
                 if param not in except_for:
                     self.params[param].set(vary=vary)
 
-    def _tof_correction(self, E, L0: float = 1.0, t0: float = 0.0, **kwargs):
+    def _tof_correction(self, E, L0: float = 1.0, t0: float = 0.0,
+                               t1: float = 0.0, t2: float = 0.0,   **kwargs):
         """
         Apply a time-of-flight (TOF) correction to the energy values.
 
@@ -444,6 +461,10 @@ class TransmissionModel(lmfit.Model):
             The scale factor for the flight path, by default 1.0.
         t0 : float, optional
             The time offset for the correction, by default 0.0.
+        t1 : float, optional
+            The linear correction factor, by default 0.0.
+        t2 : float, optional
+            The logarithmic correction factor, by default 0.0.
         kwargs : dict, optional
             Additional arguments (currently unused).
 
@@ -453,7 +474,7 @@ class TransmissionModel(lmfit.Model):
             The corrected energy values.
         """
         tof = utils.energy2time(E, self.cross_section.L)
-        dtof = (1.0 - L0) * tof + t0
+        dtof = (1.0 - L0) * tof + t0 + t1 * E + t2 * np.log(E)
         E = utils.time2energy(tof + dtof, self.cross_section.L)
         return E
     
