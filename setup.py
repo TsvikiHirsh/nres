@@ -5,11 +5,12 @@ import pybind11
 ext_modules = [
     Extension(
         "nres._integrate_xs",
-        sources=["src/bindings.cpp", "src/integrate_xs.cpp"],  # Source files
+        sources=["src/bindings.cpp", "src/integrate_xs.cpp"],
         include_dirs=[
-            pybind11.get_include(),  # Include Pybind11 headers
-            "include"  # Add the 'include' folder where your header files are located
+            pybind11.get_include(),
+            "include"
         ],
+        extra_compile_args=["-std=c++17"]  # Add C++17 requirement
     )
 ]
 
