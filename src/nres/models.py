@@ -188,7 +188,7 @@ class TransmissionModel(lmfit.Model):
         lmfit.model.ModelResult
             The fit result object, with extra methods:
             - `.plot()` — plot the fit result.
-            - `.plot_total_xs()`, `.plot_stage_progression()`, `.plot_chi2_progression()` for advanced diagnostics.
+            - `.plot_stage_progression()`, `.plot_chi2_progression()` for advanced diagnostics.
             - `.stages_summary` (for `"rietveld"`).
 
         Examples
@@ -284,7 +284,6 @@ class TransmissionModel(lmfit.Model):
         # Attach results
         self.fit_result = fit_result
         fit_result.plot = self.plot
-        fit_result.plot_total_xs = self.plot_total_xs
         fit_result.show_available_params = self.show_available_params
 
         if self.response is not None:
@@ -619,7 +618,6 @@ class TransmissionModel(lmfit.Model):
 
         # Attach plotting methods and other attributes
         fit_result.plot = self.plot
-        fit_result.plot_total_xs = self.plot_total_xs
         fit_result.plot_stage_progression = self.plot_stage_progression
         fit_result.plot_chi2_progression = self.plot_chi2_progression
         if self.response is not None:
