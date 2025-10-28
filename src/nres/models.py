@@ -210,7 +210,7 @@ class TransmissionModel(lmfit.Model):
 
         This method supports both:
         - **Standard single-stage fitting** (default)
-        - **Rietveld-style staged refinement** (`method="rietveld"`)
+        - **Rietveld-style staged refinement** (`method="rietveld"`) with accumulative parameter refinement
 
         Parameters
         ----------
@@ -367,7 +367,11 @@ class TransmissionModel(lmfit.Model):
                     verbose=False, progress_bar=True,
                     param_groups=None,
                     **kwargs):
-        """ Perform Rietveld-style staged fitting with optional emin/emax per stage.
+        """ Perform Rietveld-style staged fitting with accumulative parameter refinement.
+
+        In this method, parameters accumulate across stages. When a new stage is added,
+        all previously refined parameters remain vary=True, allowing for simultaneous
+        refinement of all parameters introduced up to that stage.
 
         Parameters
         ----------
@@ -569,6 +573,7 @@ class TransmissionModel(lmfit.Model):
 
         stage_results = []
         stage_summaries = []
+        cumulative_params = set()  # Track parameters that have been refined (accumulative Rietveld)
 
         def extract_pickleable_attributes(fit_result):
             safe_attrs = [
@@ -619,6 +624,9 @@ class TransmissionModel(lmfit.Model):
             else:
                 raise ValueError("Rietveld fitting requires energy-based input data.")
 
+            # Accumulate parameters across stages (True Rietveld approach)
+            cumulative_params.update(group)
+
             # Freeze all parameters
             for p in params.values():
                 p.vary = False
@@ -626,14 +634,20 @@ class TransmissionModel(lmfit.Model):
             # Unfreeze current group
             # Note: group_map already filters out parameters with vary=False
             unfrozen_count = 0
-            for name in group:
+            for name in cumulative_params:
                 if name in params:
                     params[name].vary = True
                     unfrozen_count += 1
-                    if verbose:
-                        print(f"  Unfrozen: {name}")
+                    if verbose and name in group:
+                        print(f"  New parameter: {name}")
+                    elif verbose:
+                        print(f"  Continuing: {name}")
                 else:
-                    warnings.warn(f"Parameter '{name}' not found in params")
+                    if name in group:  # Only warn for new parameters
+                        warnings.warn(f"Parameter '{name}' not found in params")
+
+            if verbose:
+                print(f"  Total active parameters: {unfrozen_count}")
 
             if unfrozen_count == 0:
                 warnings.warn(f"No parameters were unfrozen in {stage_name}. Skipping this stage.")
@@ -659,6 +673,7 @@ class TransmissionModel(lmfit.Model):
             stage_results.append(stripped_result)
 
             # Build summary
+            varied_params = list(cumulative_params)  # Track cumulative parameters
             summary = {
                 "stage": stage_num,
                 "stage_name": stage_name,
@@ -670,7 +685,7 @@ class TransmissionModel(lmfit.Model):
             for name, par in fit_result.params.items():
                 summary[f"{name}_value"] = par.value
                 summary[f"{name}_stderr"] = par.stderr
-                summary[f"{name}_vary"] = par.vary
+                summary[f"{name}_vary"] = name in varied_params  # Mark as vary if in cumulative set
             stage_summaries.append(summary)
 
             iterator.set_description(f"Stage {stage_num}/{len(stage_names)}")
@@ -714,10 +729,15 @@ class TransmissionModel(lmfit.Model):
         if stage_names is None:
             stage_names = [f"Stage_{i+1}" for i in range(len(stage_results))]
 
+        cumulative_params = set()  # Track cumulative parameters for Rietveld method
+
         for stage_idx, stage_result in enumerate(stage_results):
             stage_col = stage_names[stage_idx] if stage_idx < len(stage_names) else f"Stage_{stage_idx + 1}"
             stage_data[stage_col] = {'value': {}, 'stderr': {}, 'vary': {}}
-            varied_in_stage = set(resolved_param_groups[stage_idx])
+
+            # Accumulate parameters across stages
+            cumulative_params.update(resolved_param_groups[stage_idx])
+            varied_in_stage = cumulative_params.copy()
 
             for param_name in all_param_names:
                 if param_name in stage_result.params:
@@ -760,10 +780,10 @@ class TransmissionModel(lmfit.Model):
 
         styler = df.style
 
-        # 1) Highlight vary=True cells (light blue)
+        # 1) Highlight vary=True cells (light green for accumulative Rietveld)
         vary_cols = [col for col in df.columns if col[1] == 'vary']
         def highlight_vary(s):
-            return ['background-color: lightblue' if v is True else '' for v in s]
+            return ['background-color: lightgreen' if v is True else '' for v in s]
         for col in vary_cols:
             styler = styler.apply(highlight_vary, subset=[col], axis=0)
 
