@@ -17,7 +17,7 @@ ext_modules = [
 # Use setup to build the extension module
 setup(
     name="nres",
-    version="0.1.0",
+    version="0.3.0",
     author="Tsviki Y. Hirsh",
     author_email="tsviki.hirsh@gmail.com",
     description="Simple yet powerful package for neutron resonance fitting",
