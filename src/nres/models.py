@@ -354,6 +354,7 @@ class TransmissionModel(lmfit.Model):
         self.fit_result = fit_result
         fit_result.plot = self.plot
         fit_result.show_available_params = self.show_available_params
+        fit_result.save = lambda filename: self._save_result(fit_result, filename)
 
         if self.response is not None:
             fit_result.response = self.response
@@ -716,6 +717,7 @@ class TransmissionModel(lmfit.Model):
 
         fit_result.stages_summary = self.stages_summary
         fit_result.show_available_params = self.show_available_params
+        fit_result.save = lambda filename: self._save_result(fit_result, filename)
         return fit_result
 
 
@@ -1387,15 +1389,15 @@ class TransmissionModel(lmfit.Model):
         # Input validation
         if inputs is None or references is None:
             raise ValueError("Both inputs and references must be provided")
-        
+
         # Convert inputs to numpy arrays
         inputs = np.array(inputs, dtype=float)
         references = np.array(references, dtype=float)
-        
+
         # Validate input lengths
         if len(inputs) != len(references):
             raise ValueError("Input values and reference values must have the same length")
-        
+
         # Convert input values based on input_type
         if input_type == 'energy':
             inputs = utils.energy2time(inputs, self.cross_section.L)
@@ -1403,7 +1405,7 @@ class TransmissionModel(lmfit.Model):
             inputs = inputs * self.cross_section.tstep
         elif input_type != 'tof':
             raise ValueError("Invalid input_type. Must be 'tof', 'energy', or 'slice'")
-        
+
         # Convert reference values based on input_type
         if reference_type == 'energy':
             references = utils.energy2time(references, self.cross_section.L)
@@ -1411,23 +1413,182 @@ class TransmissionModel(lmfit.Model):
             references = references * self.cross_section.tstep
         elif reference_type != 'tof':
             raise ValueError("Invalid reference_type. Must be 'tof', 'energy', or 'slice'")
-        
+
         # Define the linear model using lmfit
         def linear_tof_correction(x, L0=1., t0=0.):
             return L0 * x + t0
-        
+
         # Create the model
         model = lmfit.Model(linear_tof_correction)
         params = model.make_params()
 
         if len(inputs)==1:
             params["L0"].vary = False
-        
+
         # Perform the fit
         result = model.fit(inputs, params=params,x=references)
-        
+
         # Update self.params with the calibration results
         self.params.set(t0=dict(value=result.params['t0'].value, vary=False))
         self.params.set(L0=dict(value=result.params['L0'].value, vary=False))
-        
+
         return result
+
+    def save(self, filename: str):
+        """
+        Save the model to a file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the file where the model will be saved.
+
+        Notes
+        -----
+        The model is saved using pickle serialization. The saved file can be loaded
+        using the `TransmissionModel.load()` class method.
+
+        Examples
+        --------
+        >>> model = TransmissionModel(cross_section)
+        >>> model.save("my_model.pkl")
+        >>> loaded_model = TransmissionModel.load("my_model.pkl")
+        """
+        import pickle
+
+        # Create a dictionary with all necessary model attributes
+        model_data = {
+            'cross_section': self.cross_section,
+            'response': self.response,
+            'background': self.background,
+            'params': self.params,
+            'n': self.n,
+        }
+
+        # Save optional attributes if they exist
+        if hasattr(self, 'fit_result'):
+            model_data['fit_result'] = self.fit_result
+        if hasattr(self, 'fit_stages'):
+            model_data['fit_stages'] = self.fit_stages
+        if hasattr(self, 'stages_summary'):
+            model_data['stages_summary'] = self.stages_summary
+
+        with open(filename, 'wb') as f:
+            pickle.dump(model_data, f)
+
+    @classmethod
+    def load(cls, filename: str) -> 'TransmissionModel':
+        """
+        Load a model from a file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the file containing the saved model.
+
+        Returns
+        -------
+        TransmissionModel
+            The loaded model instance.
+
+        Examples
+        --------
+        >>> model = TransmissionModel.load("my_model.pkl")
+        >>> result = model.fit(data)
+        """
+        import pickle
+
+        with open(filename, 'rb') as f:
+            model_data = pickle.load(f)
+
+        # Create a minimal model instance
+        cross_section = model_data['cross_section']
+
+        # Determine response and background types from the loaded objects
+        response_kind = model_data['response'].kind if model_data['response'] else None
+        background_kind = model_data['background'].kind if model_data['background'] else None
+
+        # Create the model instance
+        model = cls(
+            cross_section=cross_section,
+            response=response_kind,
+            background=background_kind,
+        )
+
+        # Restore all attributes
+        model.params = model_data['params']
+        model.response = model_data['response']
+        model.background = model_data['background']
+        model.n = model_data['n']
+
+        # Restore optional attributes
+        if 'fit_result' in model_data:
+            model.fit_result = model_data['fit_result']
+        if 'fit_stages' in model_data:
+            model.fit_stages = model_data['fit_stages']
+        if 'stages_summary' in model_data:
+            model.stages_summary = model_data['stages_summary']
+
+        return model
+
+    def _save_result(self, result, filename: str):
+        """
+        Save a fit result to a file.
+
+        Parameters
+        ----------
+        result : lmfit.model.ModelResult
+            The fit result to save.
+        filename : str
+            Path to the file where the result will be saved.
+        """
+        import pickle
+
+        # Create a dictionary with the result and model
+        result_data = {
+            'result': result,
+            'model': self,
+        }
+
+        with open(filename, 'wb') as f:
+            pickle.dump(result_data, f)
+
+    @classmethod
+    def load_result(cls, filename: str):
+        """
+        Load a fit result from a file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the file containing the saved result.
+
+        Returns
+        -------
+        tuple
+            A tuple containing (model, result) where model is the TransmissionModel
+            instance and result is the lmfit.model.ModelResult.
+
+        Examples
+        --------
+        >>> model, result = TransmissionModel.load_result("my_result.pkl")
+        >>> result.plot()
+        """
+        import pickle
+
+        with open(filename, 'rb') as f:
+            result_data = pickle.load(f)
+
+        model = result_data['model']
+        result = result_data['result']
+
+        # Re-attach methods to the result
+        result.plot = model.plot
+        result.show_available_params = model.show_available_params
+        result.save = lambda fn: model._save_result(result, fn)
+
+        if hasattr(result, 'stages_summary'):
+            result.plot_stage_progression = model.plot_stage_progression
+            result.plot_chi2_progression = model.plot_chi2_progression
+
+        return model, result
