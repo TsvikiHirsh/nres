@@ -285,7 +285,7 @@ class TransmissionModel(lmfit.Model):
         self.fit_result = fit_result
         fit_result.plot = self.plot
         fit_result.show_available_params = self.show_available_params
-        fit_result.save = lambda filename: self._save_result(fit_result, filename)
+        fit_result.save = lambda filename, include_model=True: self._save_result(fit_result, filename, include_model)
 
         if self.response is not None:
             fit_result.response = self.response
@@ -644,7 +644,7 @@ class TransmissionModel(lmfit.Model):
 
         fit_result.stages_summary = self.stages_summary
         fit_result.show_available_params = self.show_available_params
-        fit_result.save = lambda filename: self._save_result(fit_result, filename)
+        fit_result.save = lambda filename, include_model=True: self._save_result(fit_result, filename, include_model)
         return fit_result
 
 
@@ -1360,69 +1360,97 @@ class TransmissionModel(lmfit.Model):
 
     def save(self, filename: str):
         """
-        Save the model to a file.
+        Save the model to a JSON file.
 
         Parameters
         ----------
         filename : str
-            Path to the file where the model will be saved.
+            Path to the JSON file where the model will be saved.
 
         Notes
         -----
-        The model is saved using pickle serialization. The saved file can be loaded
-        using the `TransmissionModel.load()` class method.
+        The model is saved as JSON, which is portable and human-readable.
+        The saved file can be loaded using the `TransmissionModel.load()` class method.
 
         Examples
         --------
         >>> model = TransmissionModel(cross_section)
-        >>> model.save("my_model.pkl")
-        >>> loaded_model = TransmissionModel.load("my_model.pkl")
+        >>> model.save("my_model.json")
+        >>> loaded_model = TransmissionModel.load("my_model.json")
         """
-        import pickle
+        import json
 
-        # Create a dictionary with all necessary model attributes
-        model_data = {
-            'cross_section': self.cross_section,
-            'response': self.response,
-            'background': self.background,
-            'params': self.params,
-            'n': self.n,
+        # Serialize parameters
+        params_dict = {}
+        for name, param in self.params.items():
+            params_dict[name] = {
+                'value': float(param.value),
+                'vary': bool(param.vary),
+                'min': float(param.min) if param.min is not None else None,
+                'max': float(param.max) if param.max is not None else None,
+                'expr': param.expr,
+            }
+
+        # Serialize cross-section
+        xs_dict = {
+            'name': self.cross_section.name,
+            'materials': self.cross_section.materials,
+            'L': float(self.cross_section.L),
+            'tstep': float(self.cross_section.tstep),
+            'tbins': int(self.cross_section.tbins),
+            'first_tbin': int(self.cross_section.first_tbin),
         }
 
-        # If fit_result exists, temporarily remove unpickleable methods
-        saved_result_attrs = {}
-        if hasattr(self, 'fit_result'):
-            result = self.fit_result
-            for attr in ['plot', 'save', 'show_available_params', 'plot_stage_progression', 'plot_chi2_progression']:
-                if hasattr(result, attr):
-                    saved_result_attrs[attr] = getattr(result, attr)
-                    delattr(result, attr)
-            model_data['fit_result'] = result
+        # Serialize response parameters
+        response_dict = None
+        if self.response is not None:
+            response_dict = {
+                'params': {name: {
+                    'value': float(p.value),
+                    'vary': bool(p.vary),
+                    'min': float(p.min) if p.min is not None else None,
+                    'max': float(p.max) if p.max is not None else None,
+                } for name, p in self.response.params.items()},
+                'tstep': float(self.response.tstep),
+                'eps': float(self.response.eps),
+            }
 
-        # Save optional attributes if they exist
-        if hasattr(self, 'fit_stages'):
-            model_data['fit_stages'] = self.fit_stages
-        if hasattr(self, 'stages_summary'):
-            model_data['stages_summary'] = self.stages_summary
+        # Serialize background parameters
+        background_dict = None
+        if self.background is not None:
+            background_dict = {
+                'params': {name: {
+                    'value': float(p.value),
+                    'vary': bool(p.vary),
+                    'min': float(p.min) if p.min is not None else None,
+                    'max': float(p.max) if p.max is not None else None,
+                } for name, p in self.background.params.items()},
+            }
 
-        try:
-            with open(filename, 'wb') as f:
-                pickle.dump(model_data, f)
-        finally:
-            # Restore the methods to fit_result
-            if saved_result_attrs:
-                for attr, value in saved_result_attrs.items():
-                    setattr(self.fit_result, attr, value)
+        # Create the model data dictionary
+        model_data = {
+            'version': '1.0',
+            'type': 'TransmissionModel',
+            'cross_section': xs_dict,
+            'response': response_dict,
+            'background': background_dict,
+            'params': params_dict,
+            'n': float(self.n),
+        }
+
+        # Save to JSON file
+        with open(filename, 'w') as f:
+            json.dump(model_data, f, indent=2)
 
     @classmethod
     def load(cls, filename: str) -> 'TransmissionModel':
         """
-        Load a model from a file.
+        Load a model from a JSON file.
 
         Parameters
         ----------
         filename : str
-            Path to the file containing the saved model.
+            Path to the JSON file containing the saved model.
 
         Returns
         -------
@@ -1431,124 +1459,220 @@ class TransmissionModel(lmfit.Model):
 
         Examples
         --------
-        >>> model = TransmissionModel.load("my_model.pkl")
+        >>> model = TransmissionModel.load("my_model.json")
         >>> result = model.fit(data)
         """
-        import pickle
+        import json
 
-        with open(filename, 'rb') as f:
-            model_data = pickle.load(f)
+        with open(filename, 'r') as f:
+            model_data = json.load(f)
 
-        # Create a minimal model instance
-        cross_section = model_data['cross_section']
+        # Reconstruct cross-section
+        xs_data = model_data['cross_section']
+        xs = CrossSection()
 
-        # Create a basic model instance without initializing response/background
-        # We'll restore them directly from the saved state
-        model = cls.__new__(cls)
-        lmfit.Model.__init__(model, model.transmission)
+        # Restore cross-section materials
+        for mat_name, mat_info in xs_data['materials'].items():
+            xs.add_material(
+                mat_name,
+                mat_info,
+                splitby=mat_info.get('splitby', 'elements'),
+                total_weight=mat_info.get('total_weight', 1.0)
+            )
 
-        # Restore all attributes directly
-        model.cross_section = model_data['cross_section']
-        model.params = model_data['params']
-        model.response = model_data['response']
-        model.background = model_data['background']
+        xs.name = xs_data['name']
+        xs.L = xs_data['L']
+        xs.tstep = xs_data['tstep']
+        xs.tbins = xs_data['tbins']
+        xs.first_tbin = xs_data['first_tbin']
+
+        # Determine response and background types from saved params
+        response_kind = None
+        background_kind = None
+
+        if model_data['response'] is not None:
+            # Infer response type from parameters
+            response_kind = "expo_gauss"  # Default, can be enhanced later
+
+        if model_data['background'] is not None:
+            # Infer background type from number of parameters
+            n_bg_params = len(model_data['background']['params'])
+            if n_bg_params == 3:
+                background_kind = "polynomial3"
+            elif n_bg_params == 5:
+                background_kind = "polynomial5"
+
+        # Create model instance
+        model = cls(
+            cross_section=xs,
+            response=response_kind,
+            background=background_kind,
+        )
+
+        # Restore all parameter values
+        for name, param_data in model_data['params'].items():
+            if name in model.params:
+                model.params[name].set(
+                    value=param_data['value'],
+                    vary=param_data['vary'],
+                    min=param_data['min'],
+                    max=param_data['max'],
+                    expr=param_data['expr']
+                )
+
+        # Restore response parameters
+        if model_data['response'] is not None and model.response is not None:
+            for name, param_data in model_data['response']['params'].items():
+                if name in model.response.params:
+                    model.response.params[name].set(
+                        value=param_data['value'],
+                        vary=param_data['vary'],
+                        min=param_data['min'],
+                        max=param_data['max']
+                    )
+
+        # Restore background parameters
+        if model_data['background'] is not None and model.background is not None:
+            for name, param_data in model_data['background']['params'].items():
+                if name in model.background.params:
+                    model.background.params[name].set(
+                        value=param_data['value'],
+                        vary=param_data['vary'],
+                        min=param_data['min'],
+                        max=param_data['max']
+                    )
+
         model.n = model_data['n']
-
-        # Restore optional attributes
-        if 'fit_result' in model_data:
-            model.fit_result = model_data['fit_result']
-            # Re-attach methods to fit_result
-            model.fit_result.plot = model.plot
-            model.fit_result.show_available_params = model.show_available_params
-            model.fit_result.save = lambda filename: model._save_result(model.fit_result, filename)
-
-            if model.response is not None:
-                model.fit_result.response = model.response
-                model.fit_result.response.params = model.fit_result.params
-            if model.background is not None:
-                model.fit_result.background = model.background
-
-        if 'fit_stages' in model_data:
-            model.fit_stages = model_data['fit_stages']
-        if 'stages_summary' in model_data:
-            model.stages_summary = model_data['stages_summary']
-            if hasattr(model, 'fit_result'):
-                model.fit_result.stages_summary = model.stages_summary
-                model.fit_result.plot_stage_progression = model.plot_stage_progression
-                model.fit_result.plot_chi2_progression = model.plot_chi2_progression
 
         return model
 
-    def _save_result(self, result, filename: str):
+    def _save_result(self, result, filename: str, include_model: bool = True):
         """
-        Save a fit result to a file.
+        Save a fit result to a JSON file.
 
         Parameters
         ----------
         result : lmfit.model.ModelResult
             The fit result to save.
         filename : str
-            Path to the file where the result will be saved.
+            Path to the JSON file where the result will be saved.
+        include_model : bool, optional
+            If True, saves the full model with the result. If False, saves
+            only a compressed result with fit parameters. Default is True.
         """
-        import pickle
+        import json
+        import numpy as np
 
-        # Temporarily remove unpickleable methods from the result
-        saved_attrs = {}
-        for attr in ['plot', 'save', 'show_available_params', 'plot_stage_progression', 'plot_chi2_progression']:
-            if hasattr(result, attr):
-                saved_attrs[attr] = getattr(result, attr)
-                delattr(result, attr)
-
-        try:
-            # Create a dictionary with the result and model
-            result_data = {
-                'result': result,
-                'model': self,
+        # Serialize fit parameters
+        params_dict = {}
+        for name, param in result.params.items():
+            params_dict[name] = {
+                'value': float(param.value),
+                'stderr': float(param.stderr) if param.stderr is not None else None,
+                'vary': bool(param.vary),
+                'min': float(param.min) if param.min is not None else None,
+                'max': float(param.max) if param.max is not None else None,
+                'expr': param.expr,
             }
 
-            with open(filename, 'wb') as f:
-                pickle.dump(result_data, f)
-        finally:
-            # Restore the methods
-            for attr, value in saved_attrs.items():
-                setattr(result, attr, value)
+        # Serialize fit statistics
+        result_dict = {
+            'version': '1.0',
+            'type': 'FitResult',
+            'params': params_dict,
+            'success': bool(result.success),
+            'chisqr': float(result.chisqr),
+            'redchi': float(result.redchi),
+            'aic': float(result.aic) if hasattr(result, 'aic') else None,
+            'bic': float(result.bic) if hasattr(result, 'bic') else None,
+            'nvarys': int(result.nvarys),
+            'ndata': int(result.ndata),
+            'nfev': int(result.nfev) if hasattr(result, 'nfev') else None,
+            'message': result.message if hasattr(result, 'message') else None,
+        }
+
+        # Optionally include the model
+        if include_model:
+            # Temporarily save model to get its JSON representation
+            import tempfile
+            import os
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_f:
+                temp_filename = temp_f.name
+
+            try:
+                self.save(temp_filename)
+                with open(temp_filename, 'r') as f:
+                    model_dict = json.load(f)
+                result_dict['model'] = model_dict
+            finally:
+                if os.path.exists(temp_filename):
+                    os.remove(temp_filename)
+
+        # Save to JSON file
+        with open(filename, 'w') as f:
+            json.dump(result_dict, f, indent=2)
 
     @classmethod
-    def load_result(cls, filename: str):
+    def load_result(cls, filename: str, model: 'TransmissionModel' = None):
         """
-        Load a fit result from a file.
+        Load a fit result from a JSON file.
 
         Parameters
         ----------
         filename : str
-            Path to the file containing the saved result.
+            Path to the JSON file containing the saved result.
+        model : TransmissionModel, optional
+            Model to use for the result. If None and the file contains a model,
+            it will be loaded from the file. If the file doesn't contain a model,
+            this parameter is required.
 
         Returns
         -------
         tuple
-            A tuple containing (model, result) where model is the TransmissionModel
-            instance and result is the lmfit.model.ModelResult.
+            A tuple containing (model, params_dict) where model is the TransmissionModel
+            instance and params_dict contains the fit parameters and statistics.
 
         Examples
         --------
-        >>> model, result = TransmissionModel.load_result("my_result.pkl")
-        >>> result.plot()
+        >>> model, result_data = TransmissionModel.load_result("my_result.json")
+        >>> print(result_data['redchi'])
+
+        >>> # Or with compressed result
+        >>> model, result_data = TransmissionModel.load_result("result.json", model=my_model)
         """
-        import pickle
+        import json
+        import tempfile
+        import os
 
-        with open(filename, 'rb') as f:
-            result_data = pickle.load(f)
+        with open(filename, 'r') as f:
+            result_data = json.load(f)
 
-        model = result_data['model']
-        result = result_data['result']
+        # Load or use provided model
+        if 'model' in result_data:
+            # Full result with embedded model
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_f:
+                json.dump(result_data['model'], temp_f)
+                temp_filename = temp_f.name
 
-        # Re-attach methods to the result
-        result.plot = model.plot
-        result.show_available_params = model.show_available_params
-        result.save = lambda fn: model._save_result(result, fn)
+            try:
+                model = cls.load(temp_filename)
+            finally:
+                if os.path.exists(temp_filename):
+                    os.remove(temp_filename)
+        elif model is None:
+            raise ValueError("Model not found in file and no model provided. "
+                           "Either save with include_model=True or provide a model parameter.")
 
-        if hasattr(result, 'stages_summary'):
-            result.plot_stage_progression = model.plot_stage_progression
-            result.plot_chi2_progression = model.plot_chi2_progression
+        # Update model parameters with fit results
+        for name, param_data in result_data['params'].items():
+            if name in model.params:
+                model.params[name].set(
+                    value=param_data['value'],
+                    vary=param_data.get('vary', True),
+                    min=param_data.get('min'),
+                    max=param_data.get('max'),
+                    expr=param_data.get('expr')
+                )
 
-        return model, result
+        # Return model and result dictionary
+        return model, result_data
