@@ -25,7 +25,7 @@ def test_model_save_load():
     model.params['norm'].value = 0.95
 
     # Save to a temporary file
-    with tempfile.NamedTemporaryFile(suffix='.pkl', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
         temp_file = f.name
 
     try:
@@ -65,7 +65,7 @@ def test_model_save_load():
 
 
 def test_result_save_load():
-    """Test saving and loading a fit result."""
+    """Test saving and loading a fit result with full model."""
     # Create a simple cross-section using a material from the database
     xs = CrossSection(Ni="Ni", splitby="isotopes")
 
@@ -99,34 +99,30 @@ def test_result_save_load():
     # Fit the model
     result = model.fit(data, emin=1e5, emax=1e7, progress_bar=False)
 
-    # Save to a temporary file
-    with tempfile.NamedTemporaryFile(suffix='.pkl', delete=False) as f:
+    # Save to a temporary file (with full model)
+    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
         temp_file = f.name
 
     try:
-        # Save the result
-        result.save(temp_file)
+        # Save the result with full model
+        result.save(temp_file, include_model=True)
 
         # Load the result
-        loaded_model, loaded_result = TransmissionModel.load_result(temp_file)
+        loaded_model, loaded_result_data = TransmissionModel.load_result(temp_file)
 
         # Verify the loaded result has the same fit parameters
         for param_name in result.params:
-            assert abs(loaded_result.params[param_name].value - result.params[param_name].value) < 1e-10
+            assert abs(loaded_result_data['params'][param_name]['value'] - result.params[param_name].value) < 1e-10
 
         # Verify fit statistics
-        assert loaded_result.redchi == result.redchi
-        assert loaded_result.chisqr == result.chisqr
+        assert abs(loaded_result_data['redchi'] - result.redchi) < 1e-10
+        assert abs(loaded_result_data['chisqr'] - result.chisqr) < 1e-10
 
-        # Verify the plot method is attached
-        assert hasattr(loaded_result, 'plot')
-        assert callable(loaded_result.plot)
+        # Verify model parameters were loaded correctly (should have fit values, not initial values)
+        assert abs(loaded_model.params['thickness'].value - result.params['thickness'].value) < 1e-10
+        assert abs(loaded_model.params['norm'].value - result.params['norm'].value) < 1e-10
 
-        # Verify save method is attached
-        assert hasattr(loaded_result, 'save')
-        assert callable(loaded_result.save)
-
-        print("✓ Result save/load test passed")
+        print("✓ Result save/load test passed (full model)")
 
     finally:
         # Clean up
@@ -134,8 +130,8 @@ def test_result_save_load():
             os.remove(temp_file)
 
 
-def test_model_with_fit_result_save_load():
-    """Test saving and loading a model that contains a fit result."""
+def test_result_save_load_compressed():
+    """Test saving and loading a compressed fit result (without model)."""
     # Create a simple cross-section using a material from the database
     xs = CrossSection(Cu="Cu", splitby="isotopes")
 
@@ -166,27 +162,25 @@ def test_model_with_fit_result_save_load():
     # Fit the model
     result = model.fit(data, emin=1e5, emax=1e7, progress_bar=False)
 
-    # Save to a temporary file
-    with tempfile.NamedTemporaryFile(suffix='.pkl', delete=False) as f:
+    # Save to a temporary file (compressed, without model)
+    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
         temp_file = f.name
 
     try:
-        # Save the model (which now contains fit_result)
-        model.save(temp_file)
+        # Save the result without the model (compressed)
+        result.save(temp_file, include_model=False)
 
-        # Load the model
-        loaded_model = TransmissionModel.load(temp_file)
+        # Load the result (must provide the model)
+        loaded_model, loaded_result_data = TransmissionModel.load_result(temp_file, model=model)
 
-        # Verify the loaded model has the fit result
-        assert hasattr(loaded_model, 'fit_result')
-        assert loaded_model.fit_result.redchi == result.redchi
-
-        # Verify parameters match
+        # Verify the loaded result has the same fit parameters
         for param_name in result.params:
-            assert abs(loaded_model.fit_result.params[param_name].value -
-                      result.params[param_name].value) < 1e-10
+            assert abs(loaded_result_data['params'][param_name]['value'] - result.params[param_name].value) < 1e-10
 
-        print("✓ Model with fit result save/load test passed")
+        # Verify fit statistics
+        assert abs(loaded_result_data['redchi'] - result.redchi) < 1e-10
+
+        print("✓ Compressed result save/load test passed")
 
     finally:
         # Clean up
@@ -197,5 +191,5 @@ def test_model_with_fit_result_save_load():
 if __name__ == '__main__':
     test_model_save_load()
     test_result_save_load()
-    test_model_with_fit_result_save_load()
+    test_result_save_load_compressed()
     print("\nAll save/load tests passed! ✓")
