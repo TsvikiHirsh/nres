@@ -1465,16 +1465,30 @@ class TransmissionModel(lmfit.Model):
             'n': self.n,
         }
 
-        # Save optional attributes if they exist
+        # If fit_result exists, temporarily remove unpickleable methods
+        saved_result_attrs = {}
         if hasattr(self, 'fit_result'):
-            model_data['fit_result'] = self.fit_result
+            result = self.fit_result
+            for attr in ['plot', 'save', 'show_available_params', 'plot_stage_progression', 'plot_chi2_progression']:
+                if hasattr(result, attr):
+                    saved_result_attrs[attr] = getattr(result, attr)
+                    delattr(result, attr)
+            model_data['fit_result'] = result
+
+        # Save optional attributes if they exist
         if hasattr(self, 'fit_stages'):
             model_data['fit_stages'] = self.fit_stages
         if hasattr(self, 'stages_summary'):
             model_data['stages_summary'] = self.stages_summary
 
-        with open(filename, 'wb') as f:
-            pickle.dump(model_data, f)
+        try:
+            with open(filename, 'wb') as f:
+                pickle.dump(model_data, f)
+        finally:
+            # Restore the methods to fit_result
+            if saved_result_attrs:
+                for attr, value in saved_result_attrs.items():
+                    setattr(self.fit_result, attr, value)
 
     @classmethod
     def load(cls, filename: str) -> 'TransmissionModel':
@@ -1504,18 +1518,13 @@ class TransmissionModel(lmfit.Model):
         # Create a minimal model instance
         cross_section = model_data['cross_section']
 
-        # Determine response and background types from the loaded objects
-        response_kind = model_data['response'].kind if model_data['response'] else None
-        background_kind = model_data['background'].kind if model_data['background'] else None
+        # Create a basic model instance without initializing response/background
+        # We'll restore them directly from the saved state
+        model = cls.__new__(cls)
+        lmfit.Model.__init__(model, model.transmission)
 
-        # Create the model instance
-        model = cls(
-            cross_section=cross_section,
-            response=response_kind,
-            background=background_kind,
-        )
-
-        # Restore all attributes
+        # Restore all attributes directly
+        model.cross_section = model_data['cross_section']
         model.params = model_data['params']
         model.response = model_data['response']
         model.background = model_data['background']
@@ -1524,10 +1533,25 @@ class TransmissionModel(lmfit.Model):
         # Restore optional attributes
         if 'fit_result' in model_data:
             model.fit_result = model_data['fit_result']
+            # Re-attach methods to fit_result
+            model.fit_result.plot = model.plot
+            model.fit_result.show_available_params = model.show_available_params
+            model.fit_result.save = lambda filename: model._save_result(model.fit_result, filename)
+
+            if model.response is not None:
+                model.fit_result.response = model.response
+                model.fit_result.response.params = model.fit_result.params
+            if model.background is not None:
+                model.fit_result.background = model.background
+
         if 'fit_stages' in model_data:
             model.fit_stages = model_data['fit_stages']
         if 'stages_summary' in model_data:
             model.stages_summary = model_data['stages_summary']
+            if hasattr(model, 'fit_result'):
+                model.fit_result.stages_summary = model.stages_summary
+                model.fit_result.plot_stage_progression = model.plot_stage_progression
+                model.fit_result.plot_chi2_progression = model.plot_chi2_progression
 
         return model
 
@@ -1544,14 +1568,26 @@ class TransmissionModel(lmfit.Model):
         """
         import pickle
 
-        # Create a dictionary with the result and model
-        result_data = {
-            'result': result,
-            'model': self,
-        }
+        # Temporarily remove unpickleable methods from the result
+        saved_attrs = {}
+        for attr in ['plot', 'save', 'show_available_params', 'plot_stage_progression', 'plot_chi2_progression']:
+            if hasattr(result, attr):
+                saved_attrs[attr] = getattr(result, attr)
+                delattr(result, attr)
 
-        with open(filename, 'wb') as f:
-            pickle.dump(result_data, f)
+        try:
+            # Create a dictionary with the result and model
+            result_data = {
+                'result': result,
+                'model': self,
+            }
+
+            with open(filename, 'wb') as f:
+                pickle.dump(result_data, f)
+        finally:
+            # Restore the methods
+            for attr, value in saved_attrs.items():
+                setattr(result, attr, value)
 
     @classmethod
     def load_result(cls, filename: str):
