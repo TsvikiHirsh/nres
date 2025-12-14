@@ -11,12 +11,12 @@ from typing import List, Optional, Union
 
 
 class TransmissionModel(lmfit.Model):
-    def __init__(self, cross_section, 
+    def __init__(self, cross_section,
                         response: str = "expo_gauss",
                         background: str = "polynomial3",
                         tof_calibration: str = "linear",
-                        vary_weights: bool = None, 
-                        vary_background: bool = None, 
+                        vary_weights: bool = None,
+                        vary_background: bool = None,
                         vary_tof: bool = None,
                         vary_response: bool = None,
                         **kwargs):
@@ -46,7 +46,7 @@ class TransmissionModel(lmfit.Model):
 
         Notes
         -----
-        This model calculates the transmission function as a combination of 
+        This model calculates the transmission function as a combination of
         cross-section, response function, and background.
         """
         super().__init__(self.transmission, **kwargs)
@@ -58,6 +58,12 @@ class TransmissionModel(lmfit.Model):
             splitby=cross_section.materials[material]["splitby"])
 
         self.params = self.make_params()
+
+        # Add minimum bounds to basic parameters to prevent negative values
+        if "thickness" in self.params:
+            self.params["thickness"].set(min=0.)
+        if "norm" in self.params:
+            self.params["norm"].set(min=0.)
         if vary_weights is not None:
             self.params += self._make_weight_params(vary=vary_weights)
         if vary_tof is not None:
@@ -78,8 +84,21 @@ class TransmissionModel(lmfit.Model):
         # set the total atomic weight n [atoms/barn-cm]
         self.n = self.cross_section.n if self.cross_section else 0.01
 
+        # Initialize stages based on vary_* parameters
+        self._stages = {}
+        possible_stages = ["basic", "background", "tof", "response", "weights"]
+        vary_flags = {
+            "basic": True,  # Always include basic parameters
+            "background": vary_background,
+            "tof": vary_tof,
+            "response": vary_response,
+            "weights": vary_weights,
+        }
+        for stage in possible_stages:
+            if vary_flags.get(stage, False) is True:
+                self._stages[stage] = stage
 
-        
+
 
     def transmission(self, E: np.ndarray, thickness: float = 1, norm: float = 1., **kwargs):
         """
@@ -103,11 +122,11 @@ class TransmissionModel(lmfit.Model):
 
         Notes
         -----
-        This function combines the cross-section with the response and background 
+        This function combines the cross-section with the response and background
         models to compute the transmission, which is given by:
 
-        .. math:: T(E) = \text{norm} \cdot e^{- \sigma \cdot \text{thickness} \cdot n} \cdot (1 - \text{bg}) + \text{bg}
-        
+        .. math:: T(E) = \\text{norm} \\cdot e^{- \\sigma \\cdot \\text{thickness} \\cdot n} \\cdot (1 - \\text{bg}) + \\text{bg}
+
         where `sigma` is the cross-section, `bg` is the background function, and `n` is the total atomic weight.
         """
         E = self._tof_correction(E,**kwargs)
@@ -128,6 +147,56 @@ class TransmissionModel(lmfit.Model):
 
         T = norm * np.exp(- xs * thickness * n) * (1 - bg) + k*bg
         return T
+
+    @property
+    def stages(self):
+        """Get the current fitting stages."""
+        return self._stages
+
+    @stages.setter
+    def stages(self, value):
+        """
+        Set the fitting stages.
+
+        Parameters
+        ----------
+        value : str or dict
+            If str, must be "all" to use all vary=True parameters.
+            If dict, keys are stage names, values are stage definitions
+            ("all", a valid group name, or a list of parameters/groups).
+        """
+        import re
+
+        # Define valid group names from group_map
+        group_map = {
+            "basic": ["norm", "thickness"],
+            "background": [p for p in self.params if re.compile(r"(b|bg)\d+").match(p) or p.startswith("b_")],
+            "tof": [p for p in ["L0", "t0", "t1", "t2"] if p in self.params],
+            "response": [p for p in self.params if self.response and p in self.response.params],
+            "weights": [p for p in self.params if re.compile(r"p\d+").match(p)],
+        }
+
+        if isinstance(value, str):
+            if value != "all":
+                raise ValueError("If stages is a string, it must be 'all'")
+            self._stages = {"all": "all"}
+        elif isinstance(value, dict):
+            # Validate stage definitions
+            for stage_name, stage_def in value.items():
+                if not isinstance(stage_name, str):
+                    raise ValueError(f"Stage names must be strings, got {type(stage_name)}")
+                if isinstance(stage_def, str):
+                    if stage_def != "all" and stage_def not in group_map:
+                        raise ValueError(f"Stage definition for '{stage_name}' must be 'all' or a valid group name, got '{stage_def}'")
+                elif isinstance(stage_def, list):
+                    for param in stage_def:
+                        if not isinstance(param, str):
+                            raise ValueError(f"Parameters in stage '{stage_name}' must be strings, got {type(param)}")
+                else:
+                    raise ValueError(f"Stage definition for '{stage_name}' must be 'all', a valid group name, or a list, got {type(stage_def)}")
+            self._stages = value
+        else:
+            raise ValueError(f"Stages must be a string ('all') or dict, got {type(value)}")
 
     def fit(self, data, params=None, emin: float = 0.5e6, emax: float = 20.e6,
             method: str = "least-squares",
@@ -341,13 +410,16 @@ class TransmissionModel(lmfit.Model):
             from tqdm.auto import tqdm
         import pickle
 
-        # User-friendly group name mapping
+        # Use original params to determine which were set to vary
+        original_params = params or self.params
+
+        # User-friendly group name mapping - only include parameters that have vary=True
         group_map = {
-            "basic": ["norm", "thickness"],
-            "background": [p for p in self.params if re.compile(r"(b|bg)\d+").match(p) or p.startswith("b_")],
-            "tof": [p for p in ["L0", "t0", "t1", "t2"] if p in self.params],
-            "response": [p for p in self.params if self.response and p in self.response.params],
-            "weights": [p for p in self.params if re.compile(r"p\d+").match(p)],
+            "basic": [p for p in ["norm", "thickness"] if p in original_params and original_params[p].vary],
+            "background": [p for p in original_params if (re.compile(r"(b|bg)\d+").match(p) or p.startswith("b_")) and original_params[p].vary],
+            "tof": [p for p in ["L0", "t0", "t1", "t2"] if p in original_params and original_params[p].vary],
+            "response": [p for p in original_params if self.response and p in self.response.params and original_params[p].vary],
+            "weights": [p for p in original_params if re.compile(r"p\d+").match(p) and original_params[p].vary],
         }
 
         def resolve_single_param_or_group(item):
@@ -552,6 +624,7 @@ class TransmissionModel(lmfit.Model):
                 p.vary = False
 
             # Unfreeze current group
+            # Note: group_map already filters out parameters with vary=False
             unfrozen_count = 0
             for name in group:
                 if name in params:
@@ -744,7 +817,7 @@ class TransmissionModel(lmfit.Model):
     def show_available_params(self, show_groups=True, show_params=True):
         """
         Display available parameter groups and individual parameters for Rietveld fitting.
-        
+
         Parameters
         ----------
         show_groups : bool, optional
@@ -752,16 +825,19 @@ class TransmissionModel(lmfit.Model):
         show_params : bool, optional
             If True, show all individual parameters
         """
+        import re
+
         if show_groups:
             print("Available parameter groups:")
             print("=" * 30)
 
+            # Only show parameters that have vary=True
             group_map = {
-                "basic": ["norm", "thickness"],
-                "background": [p for p in self.params if re.compile(r"(b|bg)\d+").match(p) or p.startswith("b_")],
-                "tof": [p for p in ["L0", "t0", "t1", "t2"] if p in self.params],
-                "response": [p for p in self.params if self.response and p in self.response.params],
-                "weights": [p for p in self.params if re.compile(r"p\d+").match(p)],
+                "basic": [p for p in ["norm", "thickness"] if p in self.params and self.params[p].vary],
+                "background": [p for p in self.params if (re.compile(r"(b|bg)\d+").match(p) or p.startswith("b_")) and self.params[p].vary],
+                "tof": [p for p in ["L0", "t0", "t1", "t2"] if p in self.params and self.params[p].vary],
+                "response": [p for p in self.params if self.response and p in self.response.params and self.params[p].vary],
+                "weights": [p for p in self.params if re.compile(r"p\d+").match(p) and self.params[p].vary],
             }
             
             for group_name, params in group_map.items():

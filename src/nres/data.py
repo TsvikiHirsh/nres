@@ -139,8 +139,8 @@ class Data:
         Data
             A Data object with the transmission data loaded into a dataframe.
         """
-        df = pd.read_csv(filename, names=["energy", "trans", "err"], header=None, 
-                         skiprows=0, sep="\s+")
+        df = pd.read_csv(filename, names=["energy", "trans", "err"], header=None,
+                         skiprows=0, sep=r"\s+")
         
         # Create Data object and assign the dataframe
         self_data = cls()

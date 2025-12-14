@@ -454,7 +454,7 @@ class CrossSection:
         import matplotlib.pyplot as plt
 
         title = kwargs.pop("title", self.name)
-        ylabel = kwargs.pop("ylabel", "$\sigma$ [barn]")
+        ylabel = kwargs.pop("ylabel", r"$\sigma$ [barn]")
         xlabel = kwargs.pop("xlabel", "Energy [eV]")
         lw = kwargs.pop("lw", 1.)
 

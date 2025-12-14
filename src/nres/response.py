@@ -28,11 +28,9 @@ class Response:
         if kind == "expo_gauss":
             self.function = self.expogauss_response
             self.params = lmfit.Parameters()
-            self.params.add_many(
-                ('K', 1.0, True, 0.0001),  # Exponential shape parameter
-                ('x0', 1e-9, vary),         # Location parameter (Gaussian)
-                ('τ', 1e-9, True, 1e-10)    # Exponential scale parameter
-            )
+            self.params.add('K', value=1.0, min=0.0001, vary=vary)  # Exponential shape parameter
+            self.params.add('x0', value=1e-9, vary=vary)            # Location parameter (Gaussian)
+            self.params.add('τ', value=1e-9, min=1e-10, vary=vary)  # Exponential scale parameter
         elif kind == "none":
             self.function = self.empty_response
         else:
@@ -140,32 +138,22 @@ class Background:
         self.params = lmfit.Parameters()
         if kind == "polynomial3":
             self.function = self.polynomial3_background
-            self.params.add_many(
-                ('b0', 0.0, vary),
-                ('b1', 0.0, vary),
-                ('b2', 0.0, vary)
-            )
+            self.params.add('b0', value=0.0, min=-1e6, max=1e6, vary=vary)
+            self.params.add('b1', value=0.0, min=-1e6, max=1e6, vary=vary)
+            self.params.add('b2', value=0.0, min=-1e6, max=1e6, vary=vary)
         elif kind == "polynomial5":
             self.function = self.polynomial5_background
-            self.params.add_many(
-                ('b0', 0.0, vary),
-                ('b1', 0.0, vary),
-                ('b2', 0.0, vary),
-                ('b3', 0.0, vary),
-                ('b4', 0.0, vary)
-            )
+            for i in range(5):
+                self.params.add(f'b{i}', value=0.0, min=-1e6, max=1e6, vary=vary)
         elif kind == "sample_dependent":
             self.function = self.polynomial3_background
-            self.params.add_many(
-                ('b0', 0.0, vary),
-                ('b1', 0.0, vary),
-                ('b2', 0.0, vary),
-                ('k', 1.0, vary)
-
-            )
+            self.params.add('b0', value=0.0, min=-1e6, max=1e6, vary=vary)
+            self.params.add('b1', value=0.0, min=-1e6, max=1e6, vary=vary)
+            self.params.add('b2', value=0.0, min=-1e6, max=1e6, vary=vary)
+            self.params.add('k', value=1.0, min=0., max=10., vary=vary)
         elif kind == "constant":
             self.function = self.constant_background
-            self.params.add('b0', 0.0, vary=vary)
+            self.params.add('b0', value=0.0, min=-1e6, max=1e6, vary=vary)
         elif kind == "none":
             self.function = self.empty_background
         else:
