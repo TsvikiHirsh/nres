@@ -210,7 +210,7 @@ class TransmissionModel(lmfit.Model):
 
         This method supports both:
         - **Standard single-stage fitting** (default)
-        - **Rietveld-style staged refinement** (`method="rietveld"`) with accumulative parameter refinement
+        - **Rietveld-style staged refinement** (`method="rietveld"`) with accumulative parameter refinement with accumulative parameter refinement
 
         Parameters
         ----------
@@ -355,6 +355,7 @@ class TransmissionModel(lmfit.Model):
         fit_result.plot = self.plot
         fit_result.show_available_params = self.show_available_params
         fit_result.save = lambda filename, include_model=True: self._save_result(fit_result, filename, include_model)
+        fit_result.save = lambda filename, include_model=True: self._save_result(fit_result, filename, include_model)
 
         if self.response is not None:
             fit_result.response = self.response
@@ -368,6 +369,11 @@ class TransmissionModel(lmfit.Model):
                     verbose=False, progress_bar=True,
                     param_groups=None,
                     **kwargs):
+        """ Perform Rietveld-style staged fitting with accumulative parameter refinement.
+
+        In this method, parameters accumulate across stages. When a new stage is added,
+        all previously refined parameters remain vary=True, allowing for simultaneous
+        refinement of all parameters introduced up to that stage.
         """ Perform Rietveld-style staged fitting with accumulative parameter refinement.
 
         In this method, parameters accumulate across stages. When a new stage is added,
@@ -575,6 +581,7 @@ class TransmissionModel(lmfit.Model):
         stage_results = []
         stage_summaries = []
         cumulative_params = set()  # Track parameters that have been refined (accumulative Rietveld)
+        cumulative_params = set()  # Track parameters that have been refined (accumulative Rietveld)
 
         def extract_pickleable_attributes(fit_result):
             safe_attrs = [
@@ -628,13 +635,18 @@ class TransmissionModel(lmfit.Model):
             # Accumulate parameters across stages (True Rietveld approach)
             cumulative_params.update(group)
 
+            # Accumulate parameters across stages (True Rietveld approach)
+            cumulative_params.update(group)
+
             # Freeze all parameters
             for p in params.values():
                 p.vary = False
 
             # Unfreeze current group
             # Note: group_map already filters out parameters with vary=False
+            # Unfreeze all parameters that have been introduced so far
             unfrozen_count = 0
+            for name in cumulative_params:
             for name in cumulative_params:
                 if name in params:
                     params[name].vary = True
@@ -643,9 +655,18 @@ class TransmissionModel(lmfit.Model):
                         print(f"  New parameter: {name}")
                     elif verbose:
                         print(f"  Continuing: {name}")
+                    if verbose and name in group:
+                        print(f"  New parameter: {name}")
+                    elif verbose:
+                        print(f"  Continuing: {name}")
                 else:
                     if name in group:  # Only warn for new parameters
                         warnings.warn(f"Parameter '{name}' not found in params")
+                    if name in group:  # Only warn for new parameters
+                        warnings.warn(f"Parameter '{name}' not found in params")
+
+            if verbose:
+                print(f"  Total active parameters: {unfrozen_count}")
 
             if verbose:
                 print(f"  Total active parameters: {unfrozen_count}")
@@ -675,6 +696,7 @@ class TransmissionModel(lmfit.Model):
 
             # Build summary
             varied_params = list(cumulative_params)  # Track cumulative parameters
+            varied_params = list(cumulative_params)  # Track cumulative parameters
             summary = {
                 "stage": stage_num,
                 "stage_name": stage_name,
@@ -686,6 +708,7 @@ class TransmissionModel(lmfit.Model):
             for name, par in fit_result.params.items():
                 summary[f"{name}_value"] = par.value
                 summary[f"{name}_stderr"] = par.stderr
+                summary[f"{name}_vary"] = name in varied_params  # Mark as vary if in cumulative set
                 summary[f"{name}_vary"] = name in varied_params  # Mark as vary if in cumulative set
             stage_summaries.append(summary)
 
@@ -718,6 +741,7 @@ class TransmissionModel(lmfit.Model):
         fit_result.stages_summary = self.stages_summary
         fit_result.show_available_params = self.show_available_params
         fit_result.save = lambda filename, include_model=True: self._save_result(fit_result, filename, include_model)
+        fit_result.save = lambda filename, include_model=True: self._save_result(fit_result, filename, include_model)
         return fit_result
 
 
@@ -733,9 +757,15 @@ class TransmissionModel(lmfit.Model):
 
         cumulative_params = set()  # Track cumulative parameters for Rietveld method
 
+        cumulative_params = set()  # Track cumulative parameters for Rietveld method
+
         for stage_idx, stage_result in enumerate(stage_results):
             stage_col = stage_names[stage_idx] if stage_idx < len(stage_names) else f"Stage_{stage_idx + 1}"
             stage_data[stage_col] = {'value': {}, 'stderr': {}, 'vary': {}}
+
+            # Accumulate parameters across stages
+            cumulative_params.update(resolved_param_groups[stage_idx])
+            varied_in_stage = cumulative_params.copy()
 
             # Accumulate parameters across stages
             cumulative_params.update(resolved_param_groups[stage_idx])
@@ -783,8 +813,10 @@ class TransmissionModel(lmfit.Model):
         styler = df.style
 
         # 1) Highlight vary=True cells (light green for accumulative Rietveld)
+        # 1) Highlight vary=True cells (light green for accumulative Rietveld)
         vary_cols = [col for col in df.columns if col[1] == 'vary']
         def highlight_vary(s):
+            return ['background-color: lightgreen' if v is True else '' for v in s]
             return ['background-color: lightgreen' if v is True else '' for v in s]
         for col in vary_cols:
             styler = styler.apply(highlight_vary, subset=[col], axis=0)
@@ -1390,13 +1422,16 @@ class TransmissionModel(lmfit.Model):
         if inputs is None or references is None:
             raise ValueError("Both inputs and references must be provided")
 
+
         # Convert inputs to numpy arrays
         inputs = np.array(inputs, dtype=float)
         references = np.array(references, dtype=float)
 
+
         # Validate input lengths
         if len(inputs) != len(references):
             raise ValueError("Input values and reference values must have the same length")
+
 
         # Convert input values based on input_type
         if input_type == 'energy':
@@ -1406,6 +1441,7 @@ class TransmissionModel(lmfit.Model):
         elif input_type != 'tof':
             raise ValueError("Invalid input_type. Must be 'tof', 'energy', or 'slice'")
 
+
         # Convert reference values based on input_type
         if reference_type == 'energy':
             references = utils.energy2time(references, self.cross_section.L)
@@ -1414,9 +1450,11 @@ class TransmissionModel(lmfit.Model):
         elif reference_type != 'tof':
             raise ValueError("Invalid reference_type. Must be 'tof', 'energy', or 'slice'")
 
+
         # Define the linear model using lmfit
         def linear_tof_correction(x, L0=1., t0=0.):
             return L0 * x + t0
+
 
         # Create the model
         model = lmfit.Model(linear_tof_correction)
@@ -1425,14 +1463,336 @@ class TransmissionModel(lmfit.Model):
         if len(inputs)==1:
             params["L0"].vary = False
 
+
         # Perform the fit
         result = model.fit(inputs, params=params,x=references)
+
 
         # Update self.params with the calibration results
         self.params.set(t0=dict(value=result.params['t0'].value, vary=False))
         self.params.set(L0=dict(value=result.params['L0'].value, vary=False))
 
+
         return result
+
+    def save(self, filename: str):
+        """
+        Save the model to a JSON file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the JSON file where the model will be saved.
+
+        Notes
+        -----
+        The model is saved as JSON, which is portable and human-readable.
+        The saved file can be loaded using the `TransmissionModel.load()` class method.
+
+        Examples
+        --------
+        >>> model = TransmissionModel(cross_section)
+        >>> model.save("my_model.json")
+        >>> loaded_model = TransmissionModel.load("my_model.json")
+        """
+        import json
+
+        # Serialize parameters
+        params_dict = {}
+        for name, param in self.params.items():
+            params_dict[name] = {
+                'value': float(param.value),
+                'vary': bool(param.vary),
+                'min': float(param.min) if param.min is not None else None,
+                'max': float(param.max) if param.max is not None else None,
+                'expr': param.expr,
+            }
+
+        # Serialize cross-section
+        xs_dict = {
+            'name': self.cross_section.name,
+            'materials': self.cross_section.materials,
+            'L': float(self.cross_section.L),
+            'tstep': float(self.cross_section.tstep),
+            'tbins': int(self.cross_section.tbins),
+            'first_tbin': int(self.cross_section.first_tbin),
+        }
+
+        # Serialize response parameters
+        response_dict = None
+        if self.response is not None:
+            response_dict = {
+                'params': {name: {
+                    'value': float(p.value),
+                    'vary': bool(p.vary),
+                    'min': float(p.min) if p.min is not None else None,
+                    'max': float(p.max) if p.max is not None else None,
+                } for name, p in self.response.params.items()},
+                'tstep': float(self.response.tstep),
+                'eps': float(self.response.eps),
+            }
+
+        # Serialize background parameters
+        background_dict = None
+        if self.background is not None:
+            background_dict = {
+                'params': {name: {
+                    'value': float(p.value),
+                    'vary': bool(p.vary),
+                    'min': float(p.min) if p.min is not None else None,
+                    'max': float(p.max) if p.max is not None else None,
+                } for name, p in self.background.params.items()},
+            }
+
+        # Create the model data dictionary
+        model_data = {
+            'version': '1.0',
+            'type': 'TransmissionModel',
+            'cross_section': xs_dict,
+            'response': response_dict,
+            'background': background_dict,
+            'params': params_dict,
+            'n': float(self.n),
+        }
+
+        # Save to JSON file
+        with open(filename, 'w') as f:
+            json.dump(model_data, f, indent=2)
+
+    @classmethod
+    def load(cls, filename: str) -> 'TransmissionModel':
+        """
+        Load a model from a JSON file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the JSON file containing the saved model.
+
+        Returns
+        -------
+        TransmissionModel
+            The loaded model instance.
+
+        Examples
+        --------
+        >>> model = TransmissionModel.load("my_model.json")
+        >>> result = model.fit(data)
+        """
+        import json
+
+        with open(filename, 'r') as f:
+            model_data = json.load(f)
+
+        # Reconstruct cross-section
+        xs_data = model_data['cross_section']
+        xs = CrossSection()
+
+        # Restore cross-section materials
+        for mat_name, mat_info in xs_data['materials'].items():
+            xs.add_material(
+                mat_name,
+                mat_info,
+                splitby=mat_info.get('splitby', 'elements'),
+                total_weight=mat_info.get('total_weight', 1.0)
+            )
+
+        xs.name = xs_data['name']
+        xs.L = xs_data['L']
+        xs.tstep = xs_data['tstep']
+        xs.tbins = xs_data['tbins']
+        xs.first_tbin = xs_data['first_tbin']
+
+        # Determine response and background types from saved params
+        response_kind = None
+        background_kind = None
+
+        if model_data['response'] is not None:
+            # Infer response type from parameters
+            response_kind = "expo_gauss"  # Default, can be enhanced later
+
+        if model_data['background'] is not None:
+            # Infer background type from number of parameters
+            n_bg_params = len(model_data['background']['params'])
+            if n_bg_params == 3:
+                background_kind = "polynomial3"
+            elif n_bg_params == 5:
+                background_kind = "polynomial5"
+
+        # Create model instance
+        model = cls(
+            cross_section=xs,
+            response=response_kind,
+            background=background_kind,
+        )
+
+        # Restore all parameter values
+        for name, param_data in model_data['params'].items():
+            if name in model.params:
+                model.params[name].set(
+                    value=param_data['value'],
+                    vary=param_data['vary'],
+                    min=param_data['min'],
+                    max=param_data['max'],
+                    expr=param_data['expr']
+                )
+
+        # Restore response parameters
+        if model_data['response'] is not None and model.response is not None:
+            for name, param_data in model_data['response']['params'].items():
+                if name in model.response.params:
+                    model.response.params[name].set(
+                        value=param_data['value'],
+                        vary=param_data['vary'],
+                        min=param_data['min'],
+                        max=param_data['max']
+                    )
+
+        # Restore background parameters
+        if model_data['background'] is not None and model.background is not None:
+            for name, param_data in model_data['background']['params'].items():
+                if name in model.background.params:
+                    model.background.params[name].set(
+                        value=param_data['value'],
+                        vary=param_data['vary'],
+                        min=param_data['min'],
+                        max=param_data['max']
+                    )
+
+        model.n = model_data['n']
+
+        return model
+
+    def _save_result(self, result, filename: str, include_model: bool = True):
+        """
+        Save a fit result to a JSON file.
+
+        Parameters
+        ----------
+        result : lmfit.model.ModelResult
+            The fit result to save.
+        filename : str
+            Path to the JSON file where the result will be saved.
+        include_model : bool, optional
+            If True, saves the full model with the result. If False, saves
+            only a compressed result with fit parameters. Default is True.
+        """
+        import json
+        import numpy as np
+
+        # Serialize fit parameters
+        params_dict = {}
+        for name, param in result.params.items():
+            params_dict[name] = {
+                'value': float(param.value),
+                'stderr': float(param.stderr) if param.stderr is not None else None,
+                'vary': bool(param.vary),
+                'min': float(param.min) if param.min is not None else None,
+                'max': float(param.max) if param.max is not None else None,
+                'expr': param.expr,
+            }
+
+        # Serialize fit statistics
+        result_dict = {
+            'version': '1.0',
+            'type': 'FitResult',
+            'params': params_dict,
+            'success': bool(result.success),
+            'chisqr': float(result.chisqr),
+            'redchi': float(result.redchi),
+            'aic': float(result.aic) if hasattr(result, 'aic') else None,
+            'bic': float(result.bic) if hasattr(result, 'bic') else None,
+            'nvarys': int(result.nvarys),
+            'ndata': int(result.ndata),
+            'nfev': int(result.nfev) if hasattr(result, 'nfev') else None,
+            'message': result.message if hasattr(result, 'message') else None,
+        }
+
+        # Optionally include the model
+        if include_model:
+            # Temporarily save model to get its JSON representation
+            import tempfile
+            import os
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_f:
+                temp_filename = temp_f.name
+
+            try:
+                self.save(temp_filename)
+                with open(temp_filename, 'r') as f:
+                    model_dict = json.load(f)
+                result_dict['model'] = model_dict
+            finally:
+                if os.path.exists(temp_filename):
+                    os.remove(temp_filename)
+
+        # Save to JSON file
+        with open(filename, 'w') as f:
+            json.dump(result_dict, f, indent=2)
+
+    @classmethod
+    def load_result(cls, filename: str, model: 'TransmissionModel' = None):
+        """
+        Load a fit result from a JSON file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the JSON file containing the saved result.
+        model : TransmissionModel, optional
+            Model to use for the result. If None and the file contains a model,
+            it will be loaded from the file. If the file doesn't contain a model,
+            this parameter is required.
+
+        Returns
+        -------
+        tuple
+            A tuple containing (model, params_dict) where model is the TransmissionModel
+            instance and params_dict contains the fit parameters and statistics.
+
+        Examples
+        --------
+        >>> model, result_data = TransmissionModel.load_result("my_result.json")
+        >>> print(result_data['redchi'])
+
+        >>> # Or with compressed result
+        >>> model, result_data = TransmissionModel.load_result("result.json", model=my_model)
+        """
+        import json
+        import tempfile
+        import os
+
+        with open(filename, 'r') as f:
+            result_data = json.load(f)
+
+        # Load or use provided model
+        if 'model' in result_data:
+            # Full result with embedded model
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_f:
+                json.dump(result_data['model'], temp_f)
+                temp_filename = temp_f.name
+
+            try:
+                model = cls.load(temp_filename)
+            finally:
+                if os.path.exists(temp_filename):
+                    os.remove(temp_filename)
+        elif model is None:
+            raise ValueError("Model not found in file and no model provided. "
+                           "Either save with include_model=True or provide a model parameter.")
+
+        # Update model parameters with fit results
+        for name, param_data in result_data['params'].items():
+            if name in model.params:
+                model.params[name].set(
+                    value=param_data['value'],
+                    vary=param_data.get('vary', True),
+                    min=param_data.get('min'),
+                    max=param_data.get('max'),
+                    expr=param_data.get('expr')
+                )
+
+        # Return model and result dictionary
+        return model, result_data
 
     def save(self, filename: str):
         """
