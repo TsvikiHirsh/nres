@@ -199,7 +199,7 @@ class TransmissionModel(lmfit.Model):
             raise ValueError(f"Stages must be a string ('all') or dict, got {type(value)}")
 
     def fit(self, data, params=None, emin: float = 0.5e6, emax: float = 20.e6,
-            method: str = "least-squares",
+            method: str = "rietveld",
             xtol: float = None, ftol: float = None, gtol: float = None,
             verbose: bool = False,
             progress_bar: bool = True,
@@ -224,9 +224,9 @@ class TransmissionModel(lmfit.Model):
             Minimum and maximum energy for fitting (ignored for array-like input and overridden per stage if
             `param_groups` specify `"emin=..."` or `"emax=..."` strings).
         method : str, optional
-            Fitting method.  
-            - `"least-squares"` (default) or any method supported by `lmfit`.
-            - `"rietveld"` will run staged refinement via `_rietveld_fit`.
+            Fitting method.
+            - `"rietveld"` (default) will run staged refinement via `_rietveld_fit`.
+            - `"least-squares"` or any method supported by `lmfit` for single-stage fitting.
         xtol, ftol, gtol : float, optional
             Convergence tolerances (passed to `lmfit`).
         verbose : bool, optional
