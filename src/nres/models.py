@@ -374,12 +374,7 @@ class TransmissionModel(lmfit.Model):
         In this method, parameters accumulate across stages. When a new stage is added,
         all previously refined parameters remain vary=True, allowing for simultaneous
         refinement of all parameters introduced up to that stage.
-        """ Perform Rietveld-style staged fitting with accumulative parameter refinement.
-
-        In this method, parameters accumulate across stages. When a new stage is added,
-        all previously refined parameters remain vary=True, allowing for simultaneous
-        refinement of all parameters introduced up to that stage.
-
+        
         Parameters
         ----------
         data : pandas.DataFrame or Data
@@ -646,7 +641,6 @@ class TransmissionModel(lmfit.Model):
             # Note: group_map already filters out parameters with vary=False
             # Unfreeze all parameters that have been introduced so far
             unfrozen_count = 0
-            for name in cumulative_params:
             for name in cumulative_params:
                 if name in params:
                     params[name].vary = True
