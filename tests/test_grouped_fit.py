@@ -302,6 +302,55 @@ class TestGroupedFit:
         assert "<table" in html
         assert "Grouped Fit Results Summary" in html
 
+    def test_model_plot_with_grouped_data(self, tmp_path):
+        """Test model.plot() with index parameter for grouped data"""
+        signal_dir = tmp_path / "signal"
+        openbeam_dir = tmp_path / "openbeam"
+        signal_dir.mkdir()
+        openbeam_dir.mkdir()
+
+        tof = np.array([100, 200, 300, 400, 500])
+        for i in range(2):
+            signal_counts = np.array([900, 800, 700, 600, 500])
+            openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
+
+            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
+                signal_dir / f"pixel_{i}.csv", index=False
+            )
+            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
+                openbeam_dir / f"pixel_{i}.csv", index=False
+            )
+
+        data = Data.from_grouped(
+            str(signal_dir / "*.csv"),
+            str(openbeam_dir / "*.csv"),
+            verbosity=0,
+            n_jobs=1
+        )
+
+        xs = CrossSection(Ag="Ag", splitby="materials")
+        model = TransmissionModel(xs, vary_background=True)
+
+        # Test that plot requires index for grouped data
+        try:
+            import matplotlib
+            matplotlib.use('Agg')  # Non-interactive backend
+
+            # Should raise error without index
+            with pytest.raises(ValueError, match="Data is grouped"):
+                model.plot(data)
+
+            # Should work with index
+            ax = model.plot(data, index=0)
+            assert ax is not None
+
+            # Should work with string index
+            ax = model.plot(data, index="1")
+            assert ax is not None
+
+        except ImportError:
+            pytest.skip("matplotlib not available")
+
 
 class TestGroupedFitResultMethods:
     """Test GroupedFitResult methods"""

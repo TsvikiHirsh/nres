@@ -934,7 +934,7 @@ class TransmissionModel(lmfit.Model):
             'ftol': ftol,
             'gtol': gtol,
             'verbose': verbose if verbose else False,
-            'progress_bar': False,  # Disable individual progress bars
+            'progress_bar': verbose,  # Show individual progress bars when verbose=True
             'param_groups': param_groups,
             **kwargs
         }
@@ -960,16 +960,25 @@ class TransmissionModel(lmfit.Model):
         # Execute with threading (or multiprocessing if n_jobs != 1)
         backend = 'threading' if n_jobs > 0 else 'loky'
 
+        # Execute parallel fitting with proper progress bar
         if progress_bar:
-            iterator = tqdm(data.indices, desc=f"Fitting {len(data.indices)} groups")
+            pbar = tqdm(total=len(data.indices), desc=f"Fitting {len(data.indices)} groups")
+            results = []
+            for result in Parallel(
+                n_jobs=n_jobs,
+                backend=backend,
+                verbose=5 if verbose else 0,
+                return_as='generator'
+            )(delayed(fit_single_group)(idx) for idx in data.indices):
+                results.append(result)
+                pbar.update(1)
+            pbar.close()
         else:
-            iterator = data.indices
-
-        results = Parallel(
-            n_jobs=n_jobs,
-            backend=backend,
-            verbose=5 if verbose else 0
-        )(delayed(fit_single_group)(idx) for idx in iterator)
+            results = Parallel(
+                n_jobs=n_jobs,
+                backend=backend,
+                verbose=5 if verbose else 0
+            )(delayed(fit_single_group)(idx) for idx in data.indices)
 
         elapsed = time.time() - start_time
         if verbose:
@@ -1044,7 +1053,7 @@ class TransmissionModel(lmfit.Model):
         print("\n# Mixed approach:")
         print('param_groups = ["basic", ["b0", "ext_l2"], "lattice"]')
 
-    def plot(self, data: "nres.Data" = None, plot_bg: bool = True, correct_tof: bool = True, stage: int = None, **kwargs):
+    def plot(self, data: "nres.Data" = None, plot_bg: bool = True, correct_tof: bool = True, stage: int = None, index=None, **kwargs):
         """
         Plot the results of the fit or model.
 
@@ -1057,8 +1066,14 @@ class TransmissionModel(lmfit.Model):
         correct_tof : bool, optional
             Apply TOF correction if L0 and t0 parameters are present, by default True.
         stage: int, optional
-            If provided, plot results from a specific Rietveld fitting stage (1-indexed).    
-            Only works if Rietveld fitting has been performed.    
+            If provided, plot results from a specific Rietveld fitting stage (1-indexed).
+            Only works if Rietveld fitting has been performed.
+        index : int, tuple, or str, optional
+            For grouped data, specify which group to plot.
+            - For 2D grids: can use tuple (0, 0) or string "(0, 0)"
+            - For 1D arrays: can use int 5 or string "5"
+            - For named groups: use string "groupname"
+            If None and data is grouped, raises an error.
         kwargs : dict, optional
             Additional plot settings like color, marker size, etc.
 
@@ -1067,6 +1082,27 @@ class TransmissionModel(lmfit.Model):
         matplotlib.axes.Axes
             The axes of the plot.
         """
+        # Handle grouped data
+        if data is not None and hasattr(data, 'is_grouped') and data.is_grouped:
+            if index is None:
+                raise ValueError(
+                    "Data is grouped. Please specify which group to plot using the 'index' parameter.\n"
+                    f"Available indices: {data.indices}"
+                )
+            # Extract the specific group
+            from nres.data import Data
+            normalized_index = data._normalize_index(index)
+            if normalized_index not in data.groups:
+                raise ValueError(f"Index {index} not found. Available indices: {data.indices}")
+
+            # Create a non-grouped Data object for this specific group
+            group_data = Data()
+            group_data.table = data.groups[normalized_index]
+            group_data.L = data.L
+            group_data.tstep = data.tstep
+            group_data.is_grouped = False
+            data = group_data
+
         fig, ax = plt.subplots(2, 1, sharex=True, height_ratios=[3.5, 1], figsize=(6, 5))
         data_object = data.table.dropna().copy() if data else None
 
