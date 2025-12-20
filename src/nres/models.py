@@ -283,6 +283,20 @@ class TransmissionModel(lmfit.Model):
         print(result.stages_summary)
         ```
         """
+        # Check if data is grouped and route to parallel fitting
+        if hasattr(data, 'is_grouped') and data.is_grouped:
+            n_jobs = kwargs.pop('n_jobs', -1)
+            return self._fit_grouped(
+                data, params, emin, emax,
+                method=method,
+                xtol=xtol, ftol=ftol, gtol=gtol,
+                verbose=verbose,
+                progress_bar=progress_bar,
+                param_groups=param_groups,
+                n_jobs=n_jobs,
+                **kwargs
+            )
+
         # Route to Rietveld if requested
         if method == "rietveld":
             return self._rietveld_fit(
@@ -861,6 +875,121 @@ class TransmissionModel(lmfit.Model):
             styler = styler.apply(lambda s: [red_color(v) for v in norm_changes[col]], subset=[col], axis=0)
 
         return styler
+
+    def _fit_grouped(self, data, params=None, emin: float = 0.5e6, emax: float = 20.e6,
+                     method: str = "rietveld",
+                     xtol: float = None, ftol: float = None, gtol: float = None,
+                     verbose: bool = False,
+                     progress_bar: bool = True,
+                     param_groups: Optional[List[List[str]]] = None,
+                     n_jobs: int = -1,
+                     **kwargs):
+        """
+        Fit model to grouped data in parallel.
+
+        Parameters:
+        -----------
+        data : Data
+            Grouped data object with is_grouped=True.
+        params : lmfit.Parameters, optional
+            Parameters to use for fitting.
+        emin, emax : float
+            Energy range for fitting.
+        method : str
+            Fitting method: "least-squares" or "rietveld".
+        xtol, ftol, gtol : float, optional
+            Convergence tolerances.
+        verbose : bool
+            Show progress for individual fits.
+        progress_bar : bool
+            Show overall progress bar.
+        param_groups : list or dict, optional
+            Fitting stages configuration for rietveld.
+        n_jobs : int
+            Number of parallel jobs (default: -1 for all CPUs).
+        **kwargs
+            Additional arguments passed to fit.
+
+        Returns:
+        --------
+        GroupedFitResult
+            Container with fit results for each group.
+        """
+        from joblib import Parallel, delayed
+        from nres.grouped_fit import GroupedFitResult
+        import time
+
+        try:
+            from tqdm.auto import tqdm
+        except ImportError:
+            from tqdm import tqdm
+
+        # Prepare fit arguments
+        fit_kwargs = {
+            'params': params,
+            'emin': emin,
+            'emax': emax,
+            'method': method,
+            'xtol': xtol,
+            'ftol': ftol,
+            'gtol': gtol,
+            'verbose': verbose if verbose else False,
+            'progress_bar': False,  # Disable individual progress bars
+            'param_groups': param_groups,
+            **kwargs
+        }
+
+        def fit_single_group(idx):
+            """Fit a single group using threading."""
+            from nres.data import Data
+            group_data = Data()
+            group_data.table = data.groups[idx]
+            group_data.L = data.L
+            group_data.tstep = data.tstep
+
+            try:
+                result = self.fit(group_data, **fit_kwargs)
+            except Exception as e:
+                if verbose:
+                    print(f"Error fitting group {idx}: {e}")
+                result = None
+            return idx, result
+
+        start_time = time.time()
+
+        # Execute with threading (or multiprocessing if n_jobs != 1)
+        backend = 'threading' if n_jobs > 0 else 'loky'
+
+        if progress_bar:
+            iterator = tqdm(data.indices, desc=f"Fitting {len(data.indices)} groups")
+        else:
+            iterator = data.indices
+
+        results = Parallel(
+            n_jobs=n_jobs,
+            backend=backend,
+            verbose=5 if verbose else 0
+        )(delayed(fit_single_group)(idx) for idx in iterator)
+
+        elapsed = time.time() - start_time
+        if verbose:
+            print(f"Completed in {elapsed:.2f}s using '{backend}' backend | {elapsed/len(data.indices):.3f}s per fit")
+
+        # Collect results
+        grouped_result = GroupedFitResult(group_shape=data.group_shape)
+        failed_indices = []
+        for idx, result in results:
+            if result is not None:
+                grouped_result.add_result(idx, result)
+            else:
+                failed_indices.append(idx)
+
+        if failed_indices and verbose:
+            import warnings
+            warnings.warn(f"Fitting failed for {len(failed_indices)}/{len(data.indices)} groups. "
+                         f"Failed indices: {failed_indices[:10]}{'...' if len(failed_indices) > 10 else ''}")
+
+        return grouped_result
 
     def show_available_params(self, show_groups=True, show_params=True):
         """

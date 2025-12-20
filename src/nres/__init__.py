@@ -12,6 +12,7 @@ from nres.cross_section import CrossSection
 from nres.response import Response, Background
 from nres.models import TransmissionModel
 from nres.data import Data
+from nres.grouped_fit import GroupedFitResult
 import nres.utils as utils
 
 materials, elements, isotopes = utils.load_materials_data()
