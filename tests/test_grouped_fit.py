@@ -147,6 +147,161 @@ class TestGroupedFit:
         # Skip this test for now - rietveld fits require more realistic data
         pytest.skip("Rietveld grouped fits require more realistic test data")
 
+    def test_grouped_fit_plot(self, tmp_path):
+        """Test plot method for grouped results"""
+        signal_dir = tmp_path / "signal"
+        openbeam_dir = tmp_path / "openbeam"
+        signal_dir.mkdir()
+        openbeam_dir.mkdir()
+
+        tof = np.array([100, 200, 300, 400, 500])
+        for i in range(2):
+            signal_counts = np.array([900, 800, 700, 600, 500])
+            openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
+
+            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
+                signal_dir / f"pixel_{i}.csv", index=False
+            )
+            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
+                openbeam_dir / f"pixel_{i}.csv", index=False
+            )
+
+        data = Data.from_grouped(
+            str(signal_dir / "*.csv"),
+            str(openbeam_dir / "*.csv"),
+            verbosity=0,
+            n_jobs=1
+        )
+
+        xs = CrossSection(Ag="Ag", splitby="materials")
+        model = TransmissionModel(xs, vary_background=True)
+        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+
+        # Test that plot method works
+        try:
+            import matplotlib
+            matplotlib.use('Agg')  # Non-interactive backend
+            result.plot(0)
+            result.plot("1")
+            assert True
+        except ImportError:
+            pytest.skip("matplotlib not available")
+
+    def test_grouped_fit_plot_total_xs(self, tmp_path):
+        """Test plot_total_xs method for grouped results"""
+        signal_dir = tmp_path / "signal"
+        openbeam_dir = tmp_path / "openbeam"
+        signal_dir.mkdir()
+        openbeam_dir.mkdir()
+
+        tof = np.array([100, 200, 300, 400, 500])
+        for i in range(2):
+            signal_counts = np.array([900, 800, 700, 600, 500])
+            openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
+
+            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
+                signal_dir / f"pixel_{i}.csv", index=False
+            )
+            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
+                openbeam_dir / f"pixel_{i}.csv", index=False
+            )
+
+        data = Data.from_grouped(
+            str(signal_dir / "*.csv"),
+            str(openbeam_dir / "*.csv"),
+            verbosity=0,
+            n_jobs=1
+        )
+
+        xs = CrossSection(Ag="Ag", splitby="materials")
+        model = TransmissionModel(xs, vary_background=True)
+        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+
+        # Test that plot_total_xs method works
+        try:
+            import matplotlib
+            matplotlib.use('Agg')  # Non-interactive backend
+            result.plot_total_xs(0)
+            result.plot_total_xs("1")
+            assert True
+        except ImportError:
+            pytest.skip("matplotlib not available")
+
+    def test_grouped_fit_fit_report(self, tmp_path):
+        """Test fit_report method for grouped results"""
+        signal_dir = tmp_path / "signal"
+        openbeam_dir = tmp_path / "openbeam"
+        signal_dir.mkdir()
+        openbeam_dir.mkdir()
+
+        tof = np.array([100, 200, 300, 400, 500])
+        for i in range(2):
+            signal_counts = np.array([900, 800, 700, 600, 500])
+            openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
+
+            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
+                signal_dir / f"pixel_{i}.csv", index=False
+            )
+            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
+                openbeam_dir / f"pixel_{i}.csv", index=False
+            )
+
+        data = Data.from_grouped(
+            str(signal_dir / "*.csv"),
+            str(openbeam_dir / "*.csv"),
+            verbosity=0,
+            n_jobs=1
+        )
+
+        xs = CrossSection(Ag="Ag", splitby="materials")
+        model = TransmissionModel(xs, vary_background=True)
+        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+
+        # Test that fit_report method works and returns string
+        report = result.fit_report(0)
+        assert isinstance(report, str)
+        assert "Fit Statistics" in report or "redchi" in report.lower()
+
+        # Also test with string index
+        report = result.fit_report("1")
+        assert isinstance(report, str)
+
+    def test_grouped_fit_html_representation(self, tmp_path):
+        """Test HTML representation for grouped results"""
+        signal_dir = tmp_path / "signal"
+        openbeam_dir = tmp_path / "openbeam"
+        signal_dir.mkdir()
+        openbeam_dir.mkdir()
+
+        tof = np.array([100, 200, 300, 400, 500])
+        for i in range(2):
+            signal_counts = np.array([900, 800, 700, 600, 500])
+            openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
+
+            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
+                signal_dir / f"pixel_{i}.csv", index=False
+            )
+            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
+                openbeam_dir / f"pixel_{i}.csv", index=False
+            )
+
+        data = Data.from_grouped(
+            str(signal_dir / "*.csv"),
+            str(openbeam_dir / "*.csv"),
+            verbosity=0,
+            n_jobs=1
+        )
+
+        xs = CrossSection(Ag="Ag", splitby="materials")
+        model = TransmissionModel(xs, vary_background=True)
+        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+
+        # Test HTML representation
+        html = result._repr_html_()
+        assert isinstance(html, str)
+        assert "<table" in html
+        assert "Grouped Fit Results Summary" in html
+
 
 class TestGroupedFitResultMethods:
     """Test GroupedFitResult methods"""

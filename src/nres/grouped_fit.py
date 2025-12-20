@@ -308,19 +308,186 @@ class GroupedFitResult:
         """String representation."""
         return f"GroupedFitResult({len(self.results)} groups, shape={self.group_shape})"
 
-    def summary(self):
+    def plot(self, index, **kwargs):
         """
-        Print summary statistics for all group fits.
+        Plot a specific group's fit result.
 
-        Returns a pandas DataFrame with fit statistics and parameter values/errors for each group.
+        Parameters:
+        -----------
+        index : int, tuple, or str
+            The group index to plot.
+            - For 2D grids: can use tuple (0, 0) or string "(0,0)" or "(0, 0)"
+            - For 1D arrays: can use int 5 or string "5"
+            - For named groups: use string "groupname"
+        **kwargs
+            Additional plotting parameters passed to result.plot().
 
         Returns:
         --------
-        pandas.DataFrame
-            Summary table with columns: index, success, redchi, parameters, and parameter errors.
+        matplotlib.Axes
+            The plot axes.
+        """
+        normalized_index = self._normalize_index(index)
+
+        if normalized_index not in self.results:
+            raise ValueError(f"Index {index} not found. Available indices: {self.indices}")
+
+        # Get the individual fit result
+        fit_result = self.results[normalized_index]
+
+        # Check if this is a proper ModelResult or a SimpleNamespace (from loaded file)
+        from types import SimpleNamespace
+        if isinstance(fit_result, SimpleNamespace) or not hasattr(fit_result, 'userkws'):
+            # Try to get the model from the result
+            model = getattr(fit_result, 'model', None)
+
+            # If no model available, raise an error
+            if model is None:
+                raise AttributeError(
+                    f"Cannot plot index {index}: result was loaded from file without model information."
+                )
+
+            # We have a model but missing userkws - this is an old saved file
+            # Create empty userkws to allow plotting
+            if not hasattr(fit_result, 'userkws'):
+                fit_result.userkws = {}
+
+        # Call the model's plot method but temporarily set fit_result to the correct one
+        # This is needed because ModelResult.plot() delegates to Model.plot() where
+        # self is the shared Model instance, not the individual ModelResult
+        model = fit_result.model
+        original_fit_result = getattr(model, 'fit_result', None)
+        try:
+            model.fit_result = fit_result
+            return model.plot(**kwargs)
+        finally:
+            # Restore original fit_result
+            if original_fit_result is not None:
+                model.fit_result = original_fit_result
+            elif hasattr(model, 'fit_result'):
+                delattr(model, 'fit_result')
+
+    def plot_total_xs(self, index, **kwargs):
+        """
+        Plot the total cross-section for a specific group.
+
+        Parameters:
+        -----------
+        index : int, tuple, or str
+            The group index to plot.
+            - For 2D grids: can use tuple (0, 0) or string "(0, 0)"
+            - For 1D arrays: can use int 5 or string "5"
+            - For named groups: use string "groupname"
+        **kwargs
+            Additional plotting parameters passed to CrossSection.plot().
+
+        Returns:
+        --------
+        matplotlib.Axes
+            The plot axes.
+
+        Examples:
+        ---------
+        >>> result.plot_total_xs(index=0)
+        >>> result.plot_total_xs(index=(0, 0), title="Cross Section")
+        """
+        # Normalize index for consistent lookup
+        normalized_index = self._normalize_index(index)
+
+        if normalized_index not in self.results:
+            raise ValueError(f"Index {index} not found. Available indices: {self.indices}")
+
+        # Get the individual fit result
+        fit_result = self.results[normalized_index]
+
+        # Get the model and cross-section
+        model = getattr(fit_result, 'model', None)
+        if model is None or not hasattr(model, 'cross_section'):
+            raise AttributeError(
+                f"Cannot plot cross section for index {index}: model or cross section not available."
+            )
+
+        # Plot the cross-section
+        return model.cross_section.plot(**kwargs)
+
+    def _repr_html_(self):
+        """
+        HTML representation for Jupyter notebooks.
+
+        Returns a formatted table summarizing all grouped fit results,
+        including fit statistics and parameter values with errors.
         """
         import pandas as pd
 
+        # Collect summary data
+        summary_data = []
+        for idx in self.indices:
+            result = self.results[idx]
+            row = {
+                'index': str(idx),
+                'success': result.success if hasattr(result, 'success') else None,
+                'redchi': result.redchi if hasattr(result, 'redchi') else None,
+                'chisqr': result.chisqr if hasattr(result, 'chisqr') else None,
+                'nfev': result.nfev if hasattr(result, 'nfev') else None,
+                'nvarys': result.nvarys if hasattr(result, 'nvarys') else None,
+            }
+
+            # Add all parameter values and errors
+            if hasattr(result, 'params'):
+                for param_name in result.params:
+                    param = result.params[param_name]
+                    row[param_name] = param.value
+                    row[f"{param_name}_err"] = param.stderr if param.stderr is not None else np.nan
+
+            summary_data.append(row)
+
+        df = pd.DataFrame(summary_data)
+
+        # Create HTML with styling
+        html = f"""
+        <div style="max-width: 100%; overflow-x: auto;">
+            <h3>Grouped Fit Results Summary</h3>
+            <p><b>Number of groups:</b> {len(self.indices)}</p>
+            <p><b>Group shape:</b> {self.group_shape if self.group_shape else 'Named groups'}</p>
+            {df.to_html(index=False, classes='dataframe', border=0, float_format=lambda x: f'{x:.4g}')}
+        </div>
+        """
+
+        return html
+
+    def summary(self):
+        """
+        Display the HTML summary table for all grouped fit results.
+
+        In Jupyter notebooks, automatically displays the HTML table.
+        Outside Jupyter, prints the text summary and returns a DataFrame.
+
+        Returns:
+        --------
+        pandas.DataFrame or None
+            Summary DataFrame (outside Jupyter) or None (in Jupyter after display).
+
+        Examples:
+        ---------
+        >>> result = model.fit(grouped_data)
+        >>> result.summary()  # Auto-displays in Jupyter
+        """
+        import pandas as pd
+
+        html = self._repr_html_()
+
+        # Try to detect if we're in a Jupyter environment
+        try:
+            from IPython.display import HTML, display
+            from IPython import get_ipython
+            if get_ipython() is not None:
+                # We're in IPython/Jupyter - display the HTML
+                display(HTML(html))
+                return None
+        except ImportError:
+            pass
+
+        # Not in Jupyter - print text summary and return DataFrame
         summary_data = []
         for idx in self.indices:
             result = self.results[idx]
@@ -348,6 +515,91 @@ class GroupedFitResult:
         print(df.to_string(index=False))
         print("=" * 80)
         return df
+
+    def fit_report(self, index):
+        """
+        Display the HTML fit report for a specific group.
+
+        In Jupyter notebooks, automatically displays the HTML report.
+        Outside Jupyter, returns the HTML string.
+
+        Parameters:
+        -----------
+        index : int, tuple, or str
+            The group index to get the fit report for.
+            - For 2D grids: can use tuple (0, 0) or string "(0, 0)"
+            - For 1D arrays: can use int 5 or string "5"
+            - For named groups: use string "groupname"
+
+        Returns:
+        --------
+        str or IPython.display.HTML or None
+            HTML string (outside Jupyter), displayed HTML (in Jupyter), or None.
+
+        Examples:
+        ---------
+        >>> result = model.fit(grouped_data)
+        >>> result.fit_report(index=(0, 0))  # Auto-displays in Jupyter
+        """
+        import pandas as pd
+
+        normalized_index = self._normalize_index(index)
+        if normalized_index not in self.results:
+            raise ValueError(f"Index {index} not found. Available indices: {self.indices}")
+
+        fit_result = self.results[normalized_index]
+
+        # Check if it's a proper ModelResult or a SimpleNamespace
+        if hasattr(fit_result, '_repr_html_'):
+            html = fit_result._repr_html_()
+        else:
+            # If it's a SimpleNamespace (from loaded file), create a basic HTML report
+            html = '<div style="max-width: 900px;">\n'
+            html += f'<h3>Fit Report for Index: {index}</h3>\n'
+
+            # Parameters table
+            if hasattr(fit_result, 'params'):
+                html += '<h4>Parameters:</h4>\n'
+                param_data = []
+                for pname, param in fit_result.params.items():
+                    if hasattr(param, 'value'):
+                        param_data.append({
+                            'Parameter': pname,
+                            'Value': f"{param.value:.6g}",
+                            'Std Error': f"{param.stderr:.6g}" if param.stderr else 'N/A',
+                            'Vary': param.vary
+                        })
+                df = pd.DataFrame(param_data)
+                html += df.to_html(index=False)
+
+            # Fit statistics
+            html += '<h4>Fit Statistics:</h4>\n'
+            stats_data = {
+                'Reduced χ²': getattr(fit_result, 'redchi', 'N/A'),
+                'χ²': getattr(fit_result, 'chisqr', 'N/A'),
+                'Data points': getattr(fit_result, 'ndata', 'N/A'),
+                'Variables': getattr(fit_result, 'nvarys', 'N/A'),
+                'Function evals': getattr(fit_result, 'nfev', 'N/A'),
+                'Success': getattr(fit_result, 'success', 'N/A'),
+            }
+            stats_df = pd.DataFrame(list(stats_data.items()), columns=['Statistic', 'Value'])
+            html += stats_df.to_html(index=False)
+
+            html += '</div>'
+
+        # Try to detect if we're in a Jupyter environment and auto-display
+        try:
+            from IPython.display import HTML, display
+            from IPython import get_ipython
+            if get_ipython() is not None:
+                # We're in IPython/Jupyter - display the HTML
+                display(HTML(html))
+                return None
+        except ImportError:
+            pass
+
+        # Not in Jupyter - return the HTML string
+        return html
 
     def stages_summary(self, index):
         """

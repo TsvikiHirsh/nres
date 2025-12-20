@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from models import TransmissionModel
+from nres.models import TransmissionModel
 from lmfit import Parameters
 
 # A mock cross-section function for testing
