@@ -859,3 +859,231 @@ class GroupedFitResult:
             ax.set_title(title)
             plt.tight_layout()
             return ax
+
+    def save(self, filename: str, compact: bool = True, model_filename: str = None):
+        """
+        Save grouped fit results to a JSON file.
+
+        Parameters:
+        -----------
+        filename : str
+            Path to the output JSON file.
+        compact : bool, optional
+            If True (default), save only essential data (params, errors, redchi) to save memory.
+            If False, save full fit results.
+        model_filename : str, optional
+            Path to save the model configuration. Only used if compact=False.
+            If None, model is saved to filename.replace('.json', '_model.json').
+
+        Examples:
+        ---------
+        >>> result = model.fit(grouped_data)
+        >>> result.save("results.json")  # Compact save
+        >>> result.save("results_full.json", compact=False)  # Full save with model
+        """
+        import json
+
+        # Prepare grouped results structure
+        grouped_state = {
+            'version': '1.0',
+            'class': 'GroupedFitResult',
+            'group_shape': self.group_shape,
+            'indices': [str(idx) for idx in self.indices],  # Convert to strings for JSON
+            'results': {}
+        }
+
+        # Save each result
+        for idx in self.indices:
+            result = self.results[idx]
+            idx_str = str(idx)
+
+            if compact:
+                # Save only essential data for map plotting
+                result_data = {
+                    'compact': True,
+                    'params': {},
+                    'redchi': result.redchi if hasattr(result, 'redchi') else None,
+                    'chisqr': result.chisqr if hasattr(result, 'chisqr') else None,
+                    'success': result.success if hasattr(result, 'success') else None,
+                }
+                # Extract parameter values and errors
+                for param_name in result.params:
+                    param = result.params[param_name]
+                    result_data['params'][param_name] = {
+                        'value': float(param.value),
+                        'stderr': float(param.stderr) if param.stderr is not None else None,
+                        'vary': bool(param.vary),
+                    }
+            else:
+                # Save full result
+                result_data = {
+                    'compact': False,
+                    'params': result.params.dumps(),
+                    'init_params': result.init_params.dumps() if hasattr(result, 'init_params') else None,
+                    'success': result.success if hasattr(result, 'success') else None,
+                    'message': result.message if hasattr(result, 'message') else None,
+                    'nfev': result.nfev if hasattr(result, 'nfev') else None,
+                    'nvarys': result.nvarys if hasattr(result, 'nvarys') else None,
+                    'ndata': result.ndata if hasattr(result, 'ndata') else None,
+                    'nfree': result.nfree if hasattr(result, 'nfree') else None,
+                    'chisqr': result.chisqr if hasattr(result, 'chisqr') else None,
+                    'redchi': result.redchi if hasattr(result, 'redchi') else None,
+                    'aic': result.aic if hasattr(result, 'aic') else None,
+                    'bic': result.bic if hasattr(result, 'bic') else None,
+                }
+
+                # Save stages_summary if available (for rietveld fits)
+                if hasattr(result, 'stages_summary') and result.stages_summary is not None:
+                    import pandas as pd
+                    if isinstance(result.stages_summary, pd.DataFrame):
+                        result_data['stages_summary'] = result.stages_summary.to_json(orient='split')
+
+            grouped_state['results'][idx_str] = result_data
+
+        # Save to file
+        with open(filename, 'w') as f:
+            json.dump(grouped_state, f, indent=2)
+
+        # Save model if not compact
+        if not compact and model_filename != '' and len(self.indices) > 0:
+            if model_filename is None:
+                model_filename = filename.replace('.json', '_model.json')
+                if model_filename == filename:
+                    model_filename = filename.replace('.json', '') + '_model.json'
+
+            # Get model from first result
+            first_result = self.results[self.indices[0]]
+            if hasattr(first_result, 'model'):
+                first_result.model.save(model_filename)
+
+    @classmethod
+    def load(cls, filename: str, model_filename: str = None, model: 'TransmissionModel' = None):
+        """
+        Load grouped fit results from a JSON file.
+
+        Parameters:
+        -----------
+        filename : str
+            Path to the saved JSON file.
+        model_filename : str, optional
+            Path to the model configuration file. Only needed if full results were saved.
+        model : TransmissionModel, optional
+            Existing model to use instead of loading from file.
+
+        Returns:
+        --------
+        GroupedFitResult
+            Loaded grouped fit results.
+
+        Examples:
+        ---------
+        >>> # Load compact results
+        >>> result = GroupedFitResult.load("results.json")
+        >>>
+        >>> # Load full results with model
+        >>> result = GroupedFitResult.load("results_full.json", model_filename="model.json")
+        >>>
+        >>> # Load with existing model
+        >>> model = TransmissionModel.load("model.json")
+        >>> result = GroupedFitResult.load("results_full.json", model=model)
+        """
+        import json
+        import ast
+
+        with open(filename, 'r') as f:
+            grouped_state = json.load(f)
+
+        # Create new instance
+        group_shape = tuple(grouped_state['group_shape']) if grouped_state['group_shape'] else None
+        grouped_result = cls(group_shape=group_shape)
+
+        # Parse indices back to original types
+        indices_str = grouped_state['indices']
+        indices = []
+        for idx_str in indices_str:
+            try:
+                # Try to evaluate as tuple/int
+                idx = ast.literal_eval(idx_str)
+            except (ValueError, SyntaxError):
+                # Keep as string
+                idx = idx_str
+            indices.append(idx)
+
+        # Try to load model for compact results (for plotting support)
+        model_for_compact = None
+        if any(grouped_state['results'][idx_str].get('compact', False) for idx_str in indices_str):
+            # At least one compact result - try to load model
+            try:
+                if model is None and model_filename is None:
+                    model_filename = filename.replace('.json', '_model.json')
+                    if model_filename == filename:
+                        model_filename = filename.replace('.json', '') + '_model.json'
+                if model is None:
+                    from nres.models import TransmissionModel
+                    model_for_compact = TransmissionModel.load(model_filename)
+                else:
+                    model_for_compact = model
+            except (FileNotFoundError, Exception):
+                # Model not available - compact results won't support plotting
+                pass
+
+        # Load each result
+        for i, idx in enumerate(indices):
+            idx_str = indices_str[i]  # Use original string representation
+            result_data = grouped_state['results'][idx_str]
+
+            if result_data.get('compact', False):
+                # Create a minimal result object for compact storage
+                from types import SimpleNamespace
+                from lmfit import Parameters
+
+                result = SimpleNamespace()
+                result.params = Parameters()
+                for param_name, param_data in result_data['params'].items():
+                    result.params.add(param_name,
+                                    value=param_data['value'],
+                                    vary=param_data['vary'])
+                    result.params[param_name].stderr = param_data['stderr']
+                result.redchi = result_data['redchi']
+                result.chisqr = result_data['chisqr']
+                result.success = result_data['success']
+                result.compact = True
+                result.model = model_for_compact  # Store reference to model for plotting
+            else:
+                # Reconstruct full ModelResult
+                from lmfit import Parameters
+                from lmfit.model import ModelResult
+                import pandas as pd
+
+                # Load or use provided model
+                if model is None:
+                    if model_filename is None:
+                        model_filename = filename.replace('.json', '_model.json')
+                        if model_filename == filename:
+                            model_filename = filename.replace('.json', '') + '_model.json'
+                    from nres.models import TransmissionModel
+                    model = TransmissionModel.load(model_filename)
+
+                # Create minimal result object
+                params = Parameters()
+                params.loads(result_data['params'])
+
+                result = ModelResult(model, params)
+                result.success = result_data['success']
+                result.message = result_data.get('message')
+                result.nfev = result_data.get('nfev')
+                result.nvarys = result_data.get('nvarys')
+                result.ndata = result_data.get('ndata')
+                result.nfree = result_data.get('nfree')
+                result.chisqr = result_data.get('chisqr')
+                result.redchi = result_data.get('redchi')
+                result.aic = result_data.get('aic')
+                result.bic = result_data.get('bic')
+
+                # Restore stages_summary if available
+                if 'stages_summary' in result_data and result_data['stages_summary'] is not None:
+                    result.stages_summary = pd.read_json(result_data['stages_summary'], orient='split')
+
+            grouped_result.add_result(idx, result)
+
+        return grouped_result

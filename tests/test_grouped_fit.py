@@ -352,6 +352,116 @@ class TestGroupedFit:
             pytest.skip("matplotlib not available")
 
 
+    def test_grouped_fit_save_load_compact(self, tmp_path):
+        """Test save/load with compact=True"""
+        signal_dir = tmp_path / "signal"
+        openbeam_dir = tmp_path / "openbeam"
+        signal_dir.mkdir()
+        openbeam_dir.mkdir()
+
+        tof = np.array([100, 200, 300, 400, 500])
+        for i in range(2):
+            signal_counts = np.array([900, 800, 700, 600, 500])
+            openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
+
+            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
+                signal_dir / f"pixel_{i}.csv", index=False
+            )
+            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
+                openbeam_dir / f"pixel_{i}.csv", index=False
+            )
+
+        data = Data.from_grouped(
+            str(signal_dir / "*.csv"),
+            str(openbeam_dir / "*.csv"),
+            verbosity=0,
+            n_jobs=1
+        )
+
+        xs = CrossSection(Ag="Ag", splitby="materials")
+        model = TransmissionModel(xs, vary_background=True)
+        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+
+        # Save compact
+        save_path = tmp_path / "result_compact.json"
+        result.save(str(save_path), compact=True)
+
+        # Load
+        loaded_result = GroupedFitResult.load(str(save_path))
+
+        # Verify
+        assert isinstance(loaded_result, GroupedFitResult)
+        assert len(loaded_result) == 2
+        assert loaded_result.group_shape == (2,)
+
+        # Check parameters match
+        for idx in result.indices:
+            orig_params = result[idx].params
+            loaded_params = loaded_result[idx].params
+            for param_name in orig_params:
+                assert param_name in loaded_params
+                np.testing.assert_almost_equal(
+                    orig_params[param_name].value,
+                    loaded_params[param_name].value,
+                    decimal=6
+                )
+
+    def test_grouped_fit_save_load_full(self, tmp_path):
+        """Test save/load with compact=False"""
+        signal_dir = tmp_path / "signal"
+        openbeam_dir = tmp_path / "openbeam"
+        signal_dir.mkdir()
+        openbeam_dir.mkdir()
+
+        tof = np.array([100, 200, 300, 400, 500])
+        for i in range(2):
+            signal_counts = np.array([900, 800, 700, 600, 500])
+            openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
+
+            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
+                signal_dir / f"pixel_{i}.csv", index=False
+            )
+            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
+                openbeam_dir / f"pixel_{i}.csv", index=False
+            )
+
+        data = Data.from_grouped(
+            str(signal_dir / "*.csv"),
+            str(openbeam_dir / "*.csv"),
+            verbosity=0,
+            n_jobs=1
+        )
+
+        xs = CrossSection(Ag="Ag", splitby="materials")
+        model = TransmissionModel(xs, vary_background=True)
+        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+
+        # Save full
+        save_path = tmp_path / "result_full.json"
+        result.save(str(save_path), compact=False)
+
+        # Verify model was saved
+        model_path = tmp_path / "result_full_model.json"
+        assert model_path.exists()
+
+        # Load
+        loaded_result = GroupedFitResult.load(str(save_path))
+
+        # Verify
+        assert isinstance(loaded_result, GroupedFitResult)
+        assert len(loaded_result) == 2
+        assert loaded_result.group_shape == (2,)
+
+        # Check full result attributes
+        for idx in result.indices:
+            orig_result = result[idx]
+            loaded_result_item = loaded_result[idx]
+
+            assert loaded_result_item.success == orig_result.success
+            assert loaded_result_item.nfev == orig_result.nfev
+            np.testing.assert_almost_equal(loaded_result_item.redchi, orig_result.redchi, decimal=6)
+
+
 class TestGroupedFitResultMethods:
     """Test GroupedFitResult methods"""
 
