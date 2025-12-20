@@ -644,3 +644,146 @@ class Data:
             ax.legend()
 
         return ax
+
+    def plot_map(self, emin=0.5e6, emax=20e6, **kwargs):
+        """
+        Plot transmission map averaged over energy range for grouped data.
+
+        Parameters:
+        -----------
+        emin : float, optional
+            Minimum energy for averaging (default: 0.5e6 eV).
+        emax : float, optional
+            Maximum energy for averaging (default: 20e6 eV).
+        **kwargs : dict, optional
+            Additional plotting parameters:
+            - cmap : str, optional
+              Colormap for 2D maps (default: 'viridis').
+            - title : str, optional
+              Plot title (default: auto-generated).
+            - vmin, vmax : float, optional
+              Color scale limits for 2D maps.
+            - figsize : tuple, optional
+              Figure size (width, height) in inches.
+
+        Returns:
+        --------
+        matplotlib.Axes
+            The axes of the plot.
+
+        Raises:
+        -------
+        ValueError
+            If called on non-grouped data.
+
+        Examples:
+        ---------
+        >>> # For 2D grid data
+        >>> data = Data.from_grouped("pixel_x*_y*.csv", "ob_x*_y*.csv")
+        >>> data.plot_map(emin=1e6, emax=10e6)
+
+        >>> # For 1D array data
+        >>> data = Data.from_grouped("pixel_*.csv", "ob_*.csv")
+        >>> data.plot_map(emin=0.5e6, emax=5e6)
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        if not self.is_grouped:
+            raise ValueError("plot_map only works for grouped data")
+
+        # Extract kwargs
+        cmap = kwargs.pop("cmap", "viridis")
+        title = kwargs.pop("title", None)
+        vmin = kwargs.pop("vmin", None)
+        vmax = kwargs.pop("vmax", None)
+        figsize = kwargs.pop("figsize", None)
+
+        # Calculate average transmission for each group
+        avg_trans = {}
+        for idx in self.indices:
+            table = self.groups[idx]
+            mask = (table['energy'] >= emin) & (table['energy'] <= emax)
+            avg_trans[idx] = table.loc[mask, 'trans'].mean()
+
+        # Create visualization based on group_shape
+        if self.group_shape and len(self.group_shape) == 2:
+            # 2D pcolormesh for proper block sizing
+            # Extract unique x and y coordinates by parsing string indices
+            xs = []
+            ys = []
+            for idx_str in self.indices:
+                idx = self._parse_string_index(idx_str)
+                if isinstance(idx, tuple) and len(idx) == 2:
+                    xs.append(idx[0])
+                    ys.append(idx[1])
+            xs = sorted(set(xs))
+            ys = sorted(set(ys))
+
+            # Calculate grid spacing (block size)
+            x_spacing = xs[1] - xs[0] if len(xs) > 1 else 1
+            y_spacing = ys[1] - ys[0] if len(ys) > 1 else 1
+
+            # Create coordinate arrays including edges for pcolormesh
+            # Add half-spacing to create cell edges
+            x_edges = np.array(xs) - x_spacing / 2
+            x_edges = np.append(x_edges, xs[-1] + x_spacing / 2)
+            y_edges = np.array(ys) - y_spacing / 2
+            y_edges = np.append(y_edges, ys[-1] + y_spacing / 2)
+
+            # Create 2D array for values
+            trans_array = np.full((len(ys), len(xs)), np.nan)
+
+            # Map indices to array positions
+            x_map = {x: i for i, x in enumerate(xs)}
+            y_map = {y: i for i, y in enumerate(ys)}
+
+            for idx_str in self.indices:
+                idx = self._parse_string_index(idx_str)
+                if isinstance(idx, tuple) and len(idx) == 2:
+                    x, y = idx
+                    if x in x_map and y in y_map:
+                        trans_array[y_map[y], x_map[x]] = avg_trans[idx_str]
+
+            fig, ax = plt.subplots(figsize=figsize)
+            im = ax.pcolormesh(x_edges, y_edges, trans_array, cmap=cmap, vmin=vmin, vmax=vmax,
+                              shading='flat', **kwargs)
+            ax.set_xlabel("X coordinate")
+            ax.set_ylabel("Y coordinate")
+            ax.set_aspect('equal')
+            if title is None:
+                title = f"Average Transmission Map ({emin:.2g}-{emax:.2g} eV)"
+            ax.set_title(title)
+            plt.colorbar(im, ax=ax, label="Transmission")
+            return ax
+
+        elif self.group_shape and len(self.group_shape) == 1:
+            # 1D line plot - parse string indices back to integers
+            indices_array = np.array([self._parse_string_index(idx) for idx in self.indices])
+            trans_values = np.array([avg_trans[idx] for idx in self.indices])
+
+            fig, ax = plt.subplots(figsize=figsize)
+            ax.plot(indices_array, trans_values, 'o-', **kwargs)
+            ax.set_xlabel("Pixel index")
+            ax.set_ylabel("Average Transmission")
+            if title is None:
+                title = f"Average Transmission ({emin:.2g}-{emax:.2g} eV)"
+            ax.set_title(title)
+            ax.grid(True, alpha=0.3)
+            return ax
+
+        else:
+            # Bar chart for named indices
+            fig, ax = plt.subplots(figsize=figsize)
+            positions = np.arange(len(self.indices))
+            trans_values = [avg_trans[idx] for idx in self.indices]
+
+            ax.bar(positions, trans_values, **kwargs)
+            ax.set_xticks(positions)
+            ax.set_xticklabels(self.indices, rotation=45, ha='right')
+            ax.set_ylabel("Average Transmission")
+            if title is None:
+                title = f"Average Transmission ({emin:.2g}-{emax:.2g} eV)"
+            ax.set_title(title)
+            plt.tight_layout()
+            return ax

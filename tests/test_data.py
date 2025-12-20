@@ -323,6 +323,94 @@ class TestDataPlot:
         with pytest.raises(ValueError, match="Cannot specify index for non-grouped data"):
             data.plot(index=0)
 
+    def test_plot_map_1d(self, tmp_path):
+        """Test plot_map for 1D grouped data"""
+        signal_dir = tmp_path / "signal"
+        openbeam_dir = tmp_path / "openbeam"
+        signal_dir.mkdir()
+        openbeam_dir.mkdir()
+
+        tof = np.array([100, 200, 300])
+        for i in range(3):
+            signal_counts = np.array([900 - i * 100, 800 - i * 100, 700 - i * 100])
+            openbeam_counts = np.array([1000, 1000, 1000])
+
+            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
+                signal_dir / f"pixel_{i}.csv", index=False
+            )
+            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
+                openbeam_dir / f"pixel_{i}.csv", index=False
+            )
+
+        data = Data.from_grouped(
+            str(signal_dir / "pixel_*.csv"),
+            str(openbeam_dir / "pixel_*.csv"),
+            verbosity=0,
+            n_jobs=1
+        )
+
+        import matplotlib
+        matplotlib.use('Agg')
+
+        # Test plot_map works
+        ax = data.plot_map(emin=1e5, emax=1e7)
+        assert ax is not None
+
+    def test_plot_map_2d(self, tmp_path):
+        """Test plot_map for 2D grouped data"""
+        signal_dir = tmp_path / "signal"
+        openbeam_dir = tmp_path / "openbeam"
+        signal_dir.mkdir()
+        openbeam_dir.mkdir()
+
+        tof = np.array([100, 200, 300])
+        for x in range(2):
+            for y in range(2):
+                signal_counts = np.array([900, 800, 700])
+                openbeam_counts = np.array([1000, 1000, 1000])
+
+                pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
+                    signal_dir / f"pixel_x{x}_y{y}.csv", index=False
+                )
+                pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
+                    openbeam_dir / f"pixel_x{x}_y{y}.csv", index=False
+                )
+
+        data = Data.from_grouped(
+            str(signal_dir / "pixel_*.csv"),
+            str(openbeam_dir / "pixel_*.csv"),
+            verbosity=0,
+            n_jobs=1
+        )
+
+        import matplotlib
+        matplotlib.use('Agg')
+
+        # Test plot_map works for 2D data
+        ax = data.plot_map(emin=1e5, emax=1e7)
+        assert ax is not None
+
+    def test_plot_map_rejects_non_grouped(self, tmp_path):
+        """Test that plot_map raises error for non-grouped data"""
+        signal_file = tmp_path / "signal.csv"
+        openbeam_file = tmp_path / "openbeam.csv"
+
+        tof = np.array([100, 200, 300])
+        counts = np.array([900, 800, 700])
+
+        pd.DataFrame({"tof": tof, "counts": counts, "err": np.sqrt(counts)}).to_csv(
+            signal_file, index=False
+        )
+        pd.DataFrame({"tof": tof, "counts": counts, "err": np.sqrt(counts)}).to_csv(
+            openbeam_file, index=False
+        )
+
+        data = Data.from_counts(str(signal_file), str(openbeam_file))
+
+        # Should raise error for non-grouped data
+        with pytest.raises(ValueError, match="plot_map only works for grouped data"):
+            data.plot_map()
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
