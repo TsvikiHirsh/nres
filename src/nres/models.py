@@ -991,8 +991,17 @@ class TransmissionModel(lmfit.Model):
 
         # Execute parallel fitting with proper progress bar
         if progress_bar:
-            pbar = tqdm(total=len(data.indices), desc=f"Fitting {len(data.indices)} groups",
-                       mininterval=0.1, smoothing=0.1)
+            import sys
+            pbar = tqdm(
+                total=len(data.indices),
+                desc=f"Fitting {len(data.indices)} groups",
+                mininterval=0.05,  # Update display every 50ms minimum
+                maxinterval=1.0,   # Force update at least every second
+                smoothing=0.05,    # Less smoothing for more responsive updates
+                file=sys.stderr,   # Write to stderr (unbuffered)
+                dynamic_ncols=True,  # Adjust to terminal width
+                leave=True         # Keep the bar after completion
+            )
             results = []
             for result in Parallel(
                 n_jobs=n_jobs,
@@ -1003,7 +1012,9 @@ class TransmissionModel(lmfit.Model):
             )(delayed(fit_single_group)(idx) for idx in data.indices):
                 results.append(result)
                 pbar.update(1)
-                pbar.refresh()  # Force refresh to ensure progress is visible
+                # Force immediate display update
+                pbar.refresh()
+                sys.stderr.flush()
             pbar.close()
         else:
             results = Parallel(
