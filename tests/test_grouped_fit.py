@@ -462,6 +462,63 @@ class TestGroupedFit:
             np.testing.assert_almost_equal(loaded_result_item.redchi, orig_result.redchi, decimal=6)
 
 
+    def test_grouped_fit_memory_management(self, tmp_path):
+        """Test memory management parameters for grouped fitting"""
+        from nres.models import TransmissionModel
+        from nres.cross_section import CrossSection
+        from nres.data import Data
+        import numpy as np
+
+        # Create small 1D grouped data for quick testing
+        energies = np.logspace(5, 7, 20)
+        indices = ['0', '1']
+
+        # Create grouped data
+        groups = {}
+        for idx in indices:
+            trans = 0.8 + 0.05 * int(idx) + 0.01 * np.random.randn(len(energies))
+            err = 0.01 * np.ones_like(trans)
+            groups[idx] = pd.DataFrame({
+                'energy': energies,
+                'trans': trans,
+                'err': err
+            })
+
+        data = Data()
+        data.groups = groups
+        data.indices = indices
+        data.is_grouped = True
+        data.group_shape = (2,)
+        data.L = 0.5
+        data.tstep = 1e-6
+
+        # Create simple model
+        xs = CrossSection(Ag="Ag", splitby="materials")
+        model = TransmissionModel(xs, vary_background=True)
+
+        # Test 1: Fit with default parameters (should use n_jobs=10)
+        result = model.fit(data, verbose=False, progress_bar=False, method="least-squares")
+        assert isinstance(result, GroupedFitResult)
+        assert len(result) == 2
+
+        # Test 2: Fit with custom n_jobs
+        result = model.fit(data, verbose=False, progress_bar=False, method="least-squares", n_jobs=2)
+        assert isinstance(result, GroupedFitResult)
+        assert len(result) == 2
+
+        # Test 3: Fit with custom max_nbytes (should not crash)
+        result = model.fit(data, verbose=False, progress_bar=False, method="least-squares",
+                          n_jobs=2, max_nbytes='50M')
+        assert isinstance(result, GroupedFitResult)
+        assert len(result) == 2
+
+        # Test 4: Fit with max_nbytes=None (disable memory limit)
+        result = model.fit(data, verbose=False, progress_bar=False, method="least-squares",
+                          n_jobs=2, max_nbytes=None)
+        assert isinstance(result, GroupedFitResult)
+        assert len(result) == 2
+
+
 class TestGroupedFitResultMethods:
     """Test GroupedFitResult methods"""
 

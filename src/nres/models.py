@@ -252,6 +252,12 @@ class TransmissionModel(lmfit.Model):
         **kwargs
             Additional keyword arguments passed to `lmfit.Model.fit`.
 
+            For grouped data, additional parameters:
+            - `n_jobs` (int): Number of parallel jobs (default: 10). Use -1 for all CPUs,
+              but beware of memory issues. For threading, consider n_jobs=4 or less.
+            - `max_nbytes` (str): Maximum memory per worker (default: '100M'). Prevents
+              memory exhaustion. Increase for complex models or set to None to disable.
+
         Returns
         -------
         lmfit.model.ModelResult
@@ -285,7 +291,8 @@ class TransmissionModel(lmfit.Model):
         """
         # Check if data is grouped and route to parallel fitting
         if hasattr(data, 'is_grouped') and data.is_grouped:
-            n_jobs = kwargs.pop('n_jobs', -1)
+            n_jobs = kwargs.pop('n_jobs', 10)
+            max_nbytes = kwargs.pop('max_nbytes', '100M')
             return self._fit_grouped(
                 data, params, emin, emax,
                 method=method,
@@ -294,6 +301,7 @@ class TransmissionModel(lmfit.Model):
                 progress_bar=progress_bar,
                 param_groups=param_groups,
                 n_jobs=n_jobs,
+                max_nbytes=max_nbytes,
                 **kwargs
             )
 
@@ -882,7 +890,8 @@ class TransmissionModel(lmfit.Model):
                      verbose: bool = False,
                      progress_bar: bool = True,
                      param_groups: Optional[List[List[str]]] = None,
-                     n_jobs: int = -1,
+                     n_jobs: int = 10,
+                     max_nbytes: str = '100M',
                      **kwargs):
         """
         Fit model to grouped data in parallel.
@@ -906,7 +915,13 @@ class TransmissionModel(lmfit.Model):
         param_groups : list or dict, optional
             Fitting stages configuration for rietveld.
         n_jobs : int
-            Number of parallel jobs (default: -1 for all CPUs).
+            Number of parallel jobs (default: 10). Use -1 for all CPUs, but be aware
+            this can cause memory issues with large datasets. For threading backend,
+            consider n_jobs=4 or less for better performance.
+        max_nbytes : str
+            Maximum memory per worker (default: '100M'). Limits memory usage to prevent
+            system freezes. Increase (e.g., '500M') for complex models, or set to None
+            to disable memory limits.
         **kwargs
             Additional arguments passed to fit.
 
@@ -960,6 +975,11 @@ class TransmissionModel(lmfit.Model):
         # Execute with threading (or multiprocessing if n_jobs != 1)
         backend = 'threading' if n_jobs > 0 else 'loky'
 
+        # Warn about performance with high n_jobs in threading mode
+        if backend == 'threading' and n_jobs > 4 and verbose:
+            print(f"Warning: Using {n_jobs} threads. Consider n_jobs=4 or less for better performance.")
+            print(f"         High thread counts can cause memory issues. Current limit: {max_nbytes} per worker.")
+
         # Execute parallel fitting with proper progress bar
         if progress_bar:
             pbar = tqdm(total=len(data.indices), desc=f"Fitting {len(data.indices)} groups")
@@ -968,7 +988,8 @@ class TransmissionModel(lmfit.Model):
                 n_jobs=n_jobs,
                 backend=backend,
                 verbose=5 if verbose else 0,
-                return_as='generator'
+                return_as='generator',
+                max_nbytes=max_nbytes
             )(delayed(fit_single_group)(idx) for idx in data.indices):
                 results.append(result)
                 pbar.update(1)
@@ -977,7 +998,8 @@ class TransmissionModel(lmfit.Model):
             results = Parallel(
                 n_jobs=n_jobs,
                 backend=backend,
-                verbose=5 if verbose else 0
+                verbose=5 if verbose else 0,
+                max_nbytes=max_nbytes
             )(delayed(fit_single_group)(idx) for idx in data.indices)
 
         elapsed = time.time() - start_time
