@@ -85,7 +85,7 @@ class Data:
     def from_counts(cls, signal: str, openbeam: str,
                     empty_signal: str = "", empty_openbeam: str = "",
                     tstep: float = 1.56255e-9, L: float = 10.59,
-                    L0: float = 1.0, t0: float = 0.0):
+                    L0: float = 1.0, t0: float = 0.0, verbosity: int = 1):
         """
         Creates a Data object from signal and open beam counts data, calculates transmission, and converts tof to energy.
 
@@ -108,6 +108,8 @@ class Data:
             Values > 1.0 indicate a longer path, < 1.0 a shorter path.
         t0 : float, optional
             Time offset correction (in tof units) from vary_tof optimization. Default is 0.0.
+        verbosity : int, optional
+            Verbosity level. If 0, suppresses warnings from sqrt operations. Default is 1.
 
         Returns:
         --------
@@ -125,24 +127,30 @@ class Data:
 
         # Convert corrected tof to energy using provided time step and distance
         signal["energy"] = utils.time2energy(corrected_tof * tstep, L)
-        
+
         # Calculate transmission and associated error
-        transmission = signal["counts"] / openbeam["counts"]
-        err = transmission * np.sqrt((signal["err"] / signal["counts"])**2 + 
-                                     (openbeam["err"] / openbeam["counts"])**2)
-        
-        # If background (empty) data is provided, apply correction
-        if empty_signal and empty_openbeam:
-            empty_signal = cls._read_counts(empty_signal)
-            empty_openbeam = cls._read_counts(empty_openbeam)
-            
-            transmission *= empty_openbeam["counts"] / empty_signal["counts"]
-            err = transmission * np.sqrt(
-                (signal["err"] / signal["counts"])**2 + 
-                (openbeam["err"] / openbeam["counts"])**2 +
-                (empty_signal["err"] / empty_signal["counts"])**2 + 
-                (empty_openbeam["err"] / empty_openbeam["counts"])**2
-            )
+        # Suppress RuntimeWarnings from sqrt if verbosity is 0
+        import warnings
+        with warnings.catch_warnings():
+            if verbosity == 0:
+                warnings.simplefilter("ignore", RuntimeWarning)
+
+            transmission = signal["counts"] / openbeam["counts"]
+            err = transmission * np.sqrt((signal["err"] / signal["counts"])**2 +
+                                         (openbeam["err"] / openbeam["counts"])**2)
+
+            # If background (empty) data is provided, apply correction
+            if empty_signal and empty_openbeam:
+                empty_signal = cls._read_counts(empty_signal)
+                empty_openbeam = cls._read_counts(empty_openbeam)
+
+                transmission *= empty_openbeam["counts"] / empty_signal["counts"]
+                err = transmission * np.sqrt(
+                    (signal["err"] / signal["counts"])**2 +
+                    (openbeam["err"] / openbeam["counts"])**2 +
+                    (empty_signal["err"] / empty_signal["counts"])**2 +
+                    (empty_openbeam["err"] / empty_openbeam["counts"])**2
+                )
         
         # Construct a dataframe for energy, transmission, and error
         df = pd.DataFrame({
@@ -517,7 +525,8 @@ class Data:
                 tstep=tstep,
                 L=L,
                 L0=L0,
-                t0=t0
+                t0=t0,
+                verbosity=verbosity
             )
 
             return idx, group_data.table

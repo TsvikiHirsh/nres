@@ -692,17 +692,26 @@ class TransmissionModel(lmfit.Model):
                 continue
 
             # Perform fitting
+            # Filter out kwargs that lmfit doesn't understand
+            lmfit_kwargs = {k: v for k, v in kwargs.items()
+                           if k not in ['n_cores', 'n_jobs', 'max_nbytes', 'progress_bar']}
             try:
-                fit_result = super().fit(
-                    trans,
-                    params=params,
-                    E=energies,
-                    weights=weights,
-                    method="leastsq",
-                    **kwargs
-                )
+                with warnings.catch_warnings():
+                    if not verbose:
+                        # Suppress lmfit warnings when not verbose
+                        warnings.filterwarnings('ignore', category=UserWarning, module='lmfit')
+
+                    fit_result = super().fit(
+                        trans,
+                        params=params,
+                        E=energies,
+                        weights=weights,
+                        method="leastsq",
+                        **lmfit_kwargs
+                    )
             except Exception as e:
-                warnings.warn(f"Fitting failed in {stage_name}: {e}")
+                if verbose:
+                    warnings.warn(f"Fitting failed in {stage_name}: {e}")
                 continue
 
             # Extract pickleable part
@@ -982,7 +991,8 @@ class TransmissionModel(lmfit.Model):
 
         # Execute parallel fitting with proper progress bar
         if progress_bar:
-            pbar = tqdm(total=len(data.indices), desc=f"Fitting {len(data.indices)} groups")
+            pbar = tqdm(total=len(data.indices), desc=f"Fitting {len(data.indices)} groups",
+                       mininterval=0.1, smoothing=0.1)
             results = []
             for result in Parallel(
                 n_jobs=n_jobs,
@@ -993,6 +1003,7 @@ class TransmissionModel(lmfit.Model):
             )(delayed(fit_single_group)(idx) for idx in data.indices):
                 results.append(result)
                 pbar.update(1)
+                pbar.refresh()  # Force refresh to ensure progress is visible
             pbar.close()
         else:
             results = Parallel(
