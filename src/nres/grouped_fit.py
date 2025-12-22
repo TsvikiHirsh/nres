@@ -628,17 +628,174 @@ class GroupedFitResult:
             print(f"Warning: No stages_summary available for index {index}")
             return None
 
+    def _plot_multi_parameter_map(self, param_names, query=None, kind=None, **kwargs):
+        """
+        Plot multiple parameters together on the same plot (1D groups only).
+
+        Parameters:
+        -----------
+        param_names : list of str
+            List of parameter names to plot together.
+        query : str, optional
+            Pandas query string to filter results.
+        kind : str, optional
+            Plot type ('bar' or 'errorbar'). If None, defaults to 'bar'.
+        **kwargs : dict
+            Additional plotting parameters (title, figsize, colors, alpha, width).
+
+        Returns:
+        --------
+        matplotlib.Axes
+            The plot axes.
+        """
+        import pandas as pd
+
+        # Check that this is 1D data
+        if self.group_shape and len(self.group_shape) != 1:
+            raise ValueError("Multi-parameter plotting only works with 1D groups")
+
+        # Default to bar plot for multiple parameters
+        if kind is None:
+            kind = 'bar'
+
+        # Only bar and errorbar are supported for multi-parameter plots
+        if kind not in ['bar', 'errorbar']:
+            raise ValueError(f"Multi-parameter plots only support 'bar' or 'errorbar' kind, got '{kind}'")
+
+        # Build DataFrame with all parameters
+        data_for_query = []
+        all_param_data = {pname: {'values': {}, 'errors': {}} for pname in param_names}
+
+        for idx in self.indices:
+            result = self.results[idx]
+            row = {'index': idx}
+
+            try:
+                # Add all parameter values and errors
+                for pname in result.params:
+                    param = result.params[pname]
+                    row[pname] = param.value
+                    row[f"{pname}_err"] = param.stderr if param.stderr is not None else np.nan
+
+                # Add fit statistics for query support
+                row['redchi'] = result.redchi if hasattr(result, 'redchi') else np.nan
+                row['chisqr'] = result.chisqr if hasattr(result, 'chisqr') else np.nan
+                row['aic'] = result.aic if hasattr(result, 'aic') else np.nan
+                row['bic'] = result.bic if hasattr(result, 'bic') else np.nan
+                row['nfev'] = result.nfev if hasattr(result, 'nfev') else np.nan
+
+                data_for_query.append(row)
+
+                # Extract values and errors for each requested parameter
+                for pname in param_names:
+                    if pname.endswith('_err'):
+                        base_param = pname[:-4]
+                        if base_param in result.params:
+                            all_param_data[pname]['values'][idx] = result.params[base_param].stderr
+                            all_param_data[pname]['errors'][idx] = 0  # No error on errors
+                        else:
+                            all_param_data[pname]['values'][idx] = np.nan
+                            all_param_data[pname]['errors'][idx] = 0
+                    elif pname in result.params:
+                        all_param_data[pname]['values'][idx] = result.params[pname].value
+                        stderr = result.params[pname].stderr
+                        all_param_data[pname]['errors'][idx] = stderr if stderr is not None else 0
+                    else:
+                        all_param_data[pname]['values'][idx] = np.nan
+                        all_param_data[pname]['errors'][idx] = 0
+
+            except Exception as e:
+                for pname in param_names:
+                    all_param_data[pname]['values'][idx] = np.nan
+                    all_param_data[pname]['errors'][idx] = 0
+
+        # Apply query filter if provided
+        indices_to_plot = self.indices
+        if query:
+            df = pd.DataFrame(data_for_query)
+            try:
+                filtered_df = df.query(query)
+                indices_to_plot = [row['index'] for _, row in filtered_df.iterrows()]
+                # Mask out filtered indices
+                for pname in param_names:
+                    for idx in self.indices:
+                        if idx not in indices_to_plot:
+                            all_param_data[pname]['values'][idx] = np.nan
+            except Exception as e:
+                print(f"Warning: Query failed: {e}")
+                print("Plotting all data without filtering.")
+
+        # Extract kwargs
+        title = kwargs.pop("title", None)
+        figsize = kwargs.pop("figsize", None)
+        colors = kwargs.pop("colors", None)
+        alpha = kwargs.pop("alpha", 0.8)
+        width = kwargs.pop("width", 0.8)
+
+        # Get indices array
+        indices_array = np.array([self._parse_string_index(idx) for idx in self.indices])
+        n_params = len(param_names)
+        n_groups = len(self.indices)
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=figsize)
+
+        # Calculate bar positions
+        bar_width = width / n_params
+        x_positions = np.arange(n_groups)
+
+        # Plot each parameter
+        for i, pname in enumerate(param_names):
+            values = np.array([all_param_data[pname]['values'].get(idx, np.nan) for idx in self.indices])
+            errors = np.array([all_param_data[pname]['errors'].get(idx, 0) for idx in self.indices])
+
+            # Calculate offset for this parameter
+            offset = (i - n_params / 2 + 0.5) * bar_width
+            positions = x_positions + offset
+
+            # Get color
+            if colors is not None and i < len(colors):
+                color = colors[i]
+            else:
+                color = None
+
+            if kind == 'bar':
+                ax.bar(positions, values, bar_width, label=pname, alpha=alpha, color=color)
+            elif kind == 'errorbar':
+                ax.errorbar(positions, values, yerr=errors, fmt='o', capsize=5,
+                           label=pname, alpha=alpha, color=color, markersize=8)
+
+        # Set x-axis labels
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(indices_array)
+        ax.set_xlabel("Index")
+        ax.set_ylabel("Parameter Value")
+
+        # Set title
+        if title is None:
+            title = f"Parameter Comparison"
+        ax.set_title(title)
+
+        # Add legend
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        return ax
+
     def plot_parameter_map(self, param_name, query=None, kind=None, **kwargs):
         """
         Plot spatial map of a fitted parameter value, error, or fit statistic.
 
         Parameters:
         -----------
-        param_name : str
-            Name of the parameter to visualize. Can be:
-            - Parameter name: "thickness", "norm", etc.
+        param_name : str or list of str
+            Name(s) of the parameter(s) to visualize. Can be:
+            - Single parameter: "thickness", "norm", etc.
             - Parameter error: "thickness_err", "norm_err", etc.
             - Fit statistic: "redchi", "chisqr", "aic", "bic"
+            - List of parameters: ["teflon", "polyethylene"] - only for 1D groups
+              When a list is provided, plots multiple parameters together as bar/errorbar plots
         query : str, optional
             Pandas query string to filter results (e.g., "redchi < 2").
         kind : str, optional
@@ -646,6 +803,7 @@ class GroupedFitResult:
             - 2D data: 'pcolormesh'
             - 1D data: 'line'
             - Named groups: 'bar'
+            When param_name is a list, only 'bar' and 'errorbar' are supported.
         **kwargs : dict, optional
             Additional plotting parameters (cmap, title, vmin, vmax, figsize).
 
@@ -655,6 +813,10 @@ class GroupedFitResult:
             The plot axes.
         """
         import pandas as pd
+
+        # Check if multiple parameters are requested
+        if isinstance(param_name, (list, tuple)):
+            return self._plot_multi_parameter_map(param_name, query=query, kind=kind, **kwargs)
 
         # Auto-detect plot kind based on group_shape if not specified
         if kind is None:
