@@ -2,7 +2,6 @@ import numpy as np
 import site
 import os
 from pathlib import Path
-import shelve
 from tqdm import tqdm
 import requests
 import pandas as pd
@@ -233,17 +232,18 @@ def get_cache_path():
 
 def load_or_create_materials_cache():
     data_path = Path(__file__).parent / "data" / "nres_materials.json"
-    
+
     if data_path.exists():
-        with shelve.open(str(cache_path.with_suffix(""))) as fid:
-            materials = fid.get("materials")
-            elements = fid.get("elements")
-            isotopes = fid.get("isotopes")
-        
+        with open(data_path, "r") as f:
+            data = json.load(f)
+            materials = data.get("materials")
+            elements = data.get("elements")
+            isotopes = data.get("isotopes")
+
         # If the cache is incomplete, regenerate it
         if materials is None or elements is None:
             return create_and_save_materials_cache()
-        
+
         return materials, elements, isotopes
     else:
         return create_and_save_materials_cache()
