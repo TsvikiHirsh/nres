@@ -412,8 +412,12 @@ class TransmissionModel(lmfit.Model):
         progress_bar : bool, optional
             If True, shows a progress bar for each fitting stage.
         param_groups : list, dict, or None, optional - only used for Rietveld fitting
-            Groups of parameters to fit in each stage. Can contain "emin=.." or "emax=.." strings
-            to override energy bounds for that stage.
+            Groups of parameters to fit in each stage. Can contain special keywords:
+            - "emin=<value>" or "emax=<value>": override energy bounds for that stage
+            - "pick-one" or "pick_one": enable pick-one mode for isotope selection. In this mode,
+              the fit tries each cross-section material individually with weight=1 (others at 0),
+              then selects the isotope with the best fit quality (lowest reduced chi-squared).
+              The selected isotope is fixed at weight=1 with all others at weight=0.
         kwargs : dict, optional
             Additional keyword arguments for the fit method, such as weights, method, etc.
 
@@ -497,6 +501,10 @@ class TransmissionModel(lmfit.Model):
                                 print(f"  Override emax detected: {overrides['emax']}")
                         except ValueError:
                             warnings.warn(f"Invalid emax value in group: {item}")
+                    elif item == "pick-one" or item == "pick_one":
+                        overrides['pick_one'] = True
+                        if verbose:
+                            print(f"  Pick-one mode detected: will test each isotope individually")
                     else:
                         params_list.extend(resolve_single_param_or_group(item))
                 elif isinstance(item, list):
@@ -649,8 +657,174 @@ class TransmissionModel(lmfit.Model):
             else:
                 raise ValueError("Rietveld fitting requires energy-based input data.")
 
-            # Accumulate parameters across stages (True Rietveld approach)
-            cumulative_params.update(group)
+            # Check if pick-one mode is enabled for this stage
+            if overrides.get('pick_one', False):
+                if verbose:
+                    print(f"\n  Pick-one mode: Testing each isotope individually...")
+
+                # Get isotope names from cross-section weights
+                isotope_names = list(self.cross_section.weights.index)
+                isotope_names = [name.replace("-", "") for name in isotope_names]
+
+                # Get the p parameters (free weight parameters)
+                p_params = [p for p in params.keys() if re.compile(r"p\d+").match(p)]
+
+                if len(isotope_names) <= 1:
+                    warnings.warn(f"Pick-one mode requires at least 2 isotopes, but found {len(isotope_names)}. Skipping pick-one.")
+                elif not p_params:
+                    warnings.warn(f"Pick-one mode requires weight parameters (p1, p2, ...), but none found. Skipping pick-one.")
+                else:
+                    # Store results for each isotope test
+                    isotope_results = []
+
+                    # Test each isotope
+                    for iso_idx, isotope_name in enumerate(isotope_names):
+                        if verbose:
+                            print(f"    Testing {isotope_name}...")
+
+                        # Create a copy of params for this test
+                        test_params = deepcopy(params)
+
+                        # Set this isotope to weight=1, others to weight=0
+                        # For isotope i (i < N-1): set p_i = 14 (max), others = -14 (min)
+                        # For isotope N-1 (last): set all p_j = -14 (min)
+                        for j, p_name in enumerate(p_params):
+                            if iso_idx < len(p_params):
+                                # One of the first N-1 isotopes
+                                if j == iso_idx:
+                                    test_params[p_name].value = 14.0  # This isotope dominates
+                                else:
+                                    test_params[p_name].value = -14.0  # Others suppressed
+                            else:
+                                # Last isotope (N-1)
+                                test_params[p_name].value = -14.0  # All p's minimal -> last weight = 1
+
+                        # Set all parameters to not vary (fixed for this test)
+                        for p in test_params.values():
+                            p.vary = False
+
+                        # Only vary the parameters specified in the stage (excluding weights)
+                        non_weight_params = [p for p in group if p not in p_params and not re.compile(r"p\d+").match(p)]
+                        for param_name in non_weight_params:
+                            if param_name in test_params:
+                                test_params[param_name].vary = True
+
+                        # Perform test fit
+                        # Filter out kwargs that lmfit doesn't understand
+                        lmfit_kwargs = {k: v for k, v in kwargs.items()
+                                       if k not in ['n_cores', 'n_jobs', 'max_nbytes', 'progress_bar']}
+                        try:
+                            test_fit = super().fit(
+                                trans,
+                                params=test_params,
+                                E=energies,
+                                weights=weights,
+                                method="leastsq",
+                                **lmfit_kwargs
+                            )
+
+                            isotope_results.append({
+                                'isotope': isotope_name,
+                                'index': iso_idx,
+                                'redchi': test_fit.redchi,
+                                'params': test_fit.params
+                            })
+
+                            if verbose:
+                                print(f"      {isotope_name}: χ²/dof = {test_fit.redchi:.4f}")
+                        except Exception as e:
+                            warnings.warn(f"Fitting failed for {isotope_name}: {e}")
+                            isotope_results.append({
+                                'isotope': isotope_name,
+                                'index': iso_idx,
+                                'redchi': float('inf'),
+                                'params': None
+                            })
+
+                    # Find the best isotope (lowest reduced chi-squared)
+                    best_result = min(isotope_results, key=lambda x: x['redchi'])
+                    best_isotope = best_result['isotope']
+                    best_idx = best_result['index']
+
+                    if verbose:
+                        print(f"\n  Best fit: {best_isotope} with χ²/dof = {best_result['redchi']:.4f}")
+
+                    # Update progress bar
+                    iterator.set_postfix({"stage": stage_name, "best": best_isotope, "reduced χ²": f"{best_result['redchi']:.4g}"})
+
+                    # Set the weights to fix the best isotope at weight=1
+                    if best_idx < len(p_params):
+                        # One of the first N-1 isotopes
+                        for j, p_name in enumerate(p_params):
+                            if j == best_idx:
+                                params[p_name].value = 14.0
+                            else:
+                                params[p_name].value = -14.0
+                    else:
+                        # Last isotope
+                        for p_name in p_params:
+                            params[p_name].value = -14.0
+
+                    # Copy other fitted parameters from the best result
+                    if best_result['params'] is not None:
+                        non_weight_params = [p for p in group if p not in p_params and not re.compile(r"p\d+").match(p)]
+                        for param_name in non_weight_params:
+                            if param_name in params and param_name in best_result['params']:
+                                params[param_name].value = best_result['params'][param_name].value
+
+                    # The weights are now fixed, so we continue to the next stage
+                    # Add the stage to cumulative params (the non-weight params were fitted)
+                    cumulative_params.update([p for p in group if not re.compile(r"p\d+").match(p)])
+
+                    # Create a summary entry for this pick-one stage
+                    summary = {
+                        "stage": stage_num,
+                        "stage_name": stage_name,
+                        "fitted_params": group,
+                        "emin": stage_emin,
+                        "emax": stage_emax,
+                        "redchi": best_result['redchi'],
+                        "pick_one_mode": True,
+                        "best_isotope": best_isotope
+                    }
+                    for name, par in params.items():
+                        summary[f"{name}_value"] = par.value
+                        summary[f"{name}_stderr"] = None  # No stderr for fixed weights
+                        summary[f"{name}_vary"] = name in cumulative_params
+                    stage_summaries.append(summary)
+
+                    # Create a fake fit_result for consistency
+                    class PickOneFitResult:
+                        def __init__(self, params, redchi):
+                            self.params = params
+                            self.redchi = redchi
+                            self.success = True
+                            self.residual = None
+                            self.chisqr = None
+                            self.aic = None
+                            self.bic = None
+                            self.nvarys = 0
+                            self.ndata = len(energies)
+                            self.nfev = 0
+                            self.message = f"Pick-one mode: selected {best_isotope}"
+                            self.lmdif_message = self.message
+                            self.cov_x = None
+                            self.method = "pick-one"
+                            self.flatchain = None
+                            self.errorbars = False
+                            self.ci_out = None
+
+                    fit_result = PickOneFitResult(params, best_result['redchi'])
+                    stripped_result = extract_pickleable_attributes(fit_result)
+                    stage_results.append(stripped_result)
+
+                    iterator.set_description(f"Stage {stage_num}/{len(stage_names)}")
+
+                    if verbose:
+                        print(f"  {stage_name} completed with pick-one. Selected {best_isotope}, χ²/dof = {best_result['redchi']:.4f}")
+
+                    # Skip the normal fitting for this stage
+                    continue
 
             # Accumulate parameters across stages (True Rietveld approach)
             cumulative_params.update(group)
@@ -671,18 +845,9 @@ class TransmissionModel(lmfit.Model):
                         print(f"  New parameter: {name}")
                     elif verbose:
                         print(f"  Continuing: {name}")
-                    if verbose and name in group:
-                        print(f"  New parameter: {name}")
-                    elif verbose:
-                        print(f"  Continuing: {name}")
                 else:
                     if name in group:  # Only warn for new parameters
                         warnings.warn(f"Parameter '{name}' not found in params")
-                    if name in group:  # Only warn for new parameters
-                        warnings.warn(f"Parameter '{name}' not found in params")
-
-            if verbose:
-                print(f"  Total active parameters: {unfrozen_count}")
 
             if verbose:
                 print(f"  Total active parameters: {unfrozen_count}")
@@ -734,7 +899,6 @@ class TransmissionModel(lmfit.Model):
                 summary[f"{name}_value"] = par.value
                 summary[f"{name}_stderr"] = par.stderr
                 summary[f"{name}_vary"] = name in varied_params  # Mark as vary if in cumulative set
-                summary[f"{name}_vary"] = name in varied_params  # Mark as vary if in cumulative set
             stage_summaries.append(summary)
 
             iterator.set_description(f"Stage {stage_num}/{len(stage_names)}")
@@ -766,7 +930,6 @@ class TransmissionModel(lmfit.Model):
         fit_result.stages_summary = self.stages_summary
         fit_result.show_available_params = self.show_available_params
         fit_result.save = lambda filename, include_model=True: self._save_result(fit_result, filename, include_model)
-        fit_result.save = lambda filename, include_model=True: self._save_result(fit_result, filename, include_model)
         return fit_result
 
 
@@ -782,15 +945,9 @@ class TransmissionModel(lmfit.Model):
 
         cumulative_params = set()  # Track cumulative parameters for Rietveld method
 
-        cumulative_params = set()  # Track cumulative parameters for Rietveld method
-
         for stage_idx, stage_result in enumerate(stage_results):
             stage_col = stage_names[stage_idx] if stage_idx < len(stage_names) else f"Stage_{stage_idx + 1}"
             stage_data[stage_col] = {'value': {}, 'stderr': {}, 'vary': {}}
-
-            # Accumulate parameters across stages
-            cumulative_params.update(resolved_param_groups[stage_idx])
-            varied_in_stage = cumulative_params.copy()
 
             # Accumulate parameters across stages
             cumulative_params.update(resolved_param_groups[stage_idx])
@@ -838,10 +995,8 @@ class TransmissionModel(lmfit.Model):
         styler = df.style
 
         # 1) Highlight vary=True cells (light green for accumulative Rietveld)
-        # 1) Highlight vary=True cells (light green for accumulative Rietveld)
         vary_cols = [col for col in df.columns if col[1] == 'vary']
         def highlight_vary(s):
-            return ['background-color: lightgreen' if v is True else '' for v in s]
             return ['background-color: lightgreen' if v is True else '' for v in s]
         for col in vary_cols:
             styler = styler.apply(highlight_vary, subset=[col], axis=0)
