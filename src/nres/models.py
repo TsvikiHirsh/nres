@@ -19,6 +19,7 @@ class TransmissionModel(lmfit.Model):
                         vary_background: bool = None,
                         vary_tof: bool = None,
                         vary_response: bool = None,
+                        params: "lmfit.Parameters" = None,
                         **kwargs):
         """
         Initialize the TransmissionModel, a subclass of lmfit.Model.
@@ -41,6 +42,11 @@ class TransmissionModel(lmfit.Model):
             If True, allows the TOF (time-of-flight) parameters (L0, t0) to vary during fitting.
         vary_response : bool, optional
             If True, allows the response parameters to vary during fitting.
+        params : lmfit.Parameters, optional
+            Initial parameter values from a previous fit. Only the parameter values
+            will be updated; vary flags, bounds, and expressions remain as defined by
+            the vary_* arguments. This is useful for using fit results as initial
+            guesses for subsequent fits.
         kwargs : dict, optional
             Additional keyword arguments for model and background parameters.
 
@@ -48,7 +54,23 @@ class TransmissionModel(lmfit.Model):
         -----
         This model calculates the transmission function as a combination of
         cross-section, response function, and background.
+
+        Examples
+        --------
+        Using fit results as initial guesses for a new model:
+
+        >>> # First fit
+        >>> model1 = TransmissionModel(xs, vary_background=True, vary_tof=True)
+        >>> result1 = model1.fit(data1)
+        >>>
+        >>> # Use result1 parameters as initial guesses for a new fit
+        >>> model2 = TransmissionModel(xs, vary_background=True, params=result1.params)
+        >>> result2 = model2.fit(data2)
         """
+        # Extract params from kwargs if provided there (for backward compatibility)
+        if params is None and 'params' in kwargs:
+            params = kwargs.pop('params')
+
         super().__init__(self.transmission, **kwargs)
 
         self.cross_section = CrossSection()
@@ -97,6 +119,11 @@ class TransmissionModel(lmfit.Model):
         for stage in possible_stages:
             if vary_flags.get(stage, False) is True:
                 self._stages[stage] = stage
+
+        # Load parameter values from previous fit if provided
+        # This only updates values, not vary flags, bounds, or expressions
+        if params is not None:
+            self._load_param_values(params)
 
 
 
@@ -147,6 +174,29 @@ class TransmissionModel(lmfit.Model):
 
         T = norm * np.exp(- xs * thickness * n) * (1 - bg) + k*bg
         return T
+
+    def _load_param_values(self, source_params: "lmfit.Parameters"):
+        """
+        Load parameter values from a source Parameters object.
+
+        Only updates the values of existing parameters, preserving vary flags,
+        bounds, and expressions as defined during model initialization.
+
+        Parameters
+        ----------
+        source_params : lmfit.Parameters
+            Source parameters (e.g., from a previous fit result) to load values from.
+
+        Notes
+        -----
+        This method is called during __init__ if params argument is provided.
+        It ensures that only parameters that exist in both source and target
+        are updated, and only their values are changed.
+        """
+        for param_name in self.params:
+            if param_name in source_params:
+                # Only update the value, preserve vary, min, max, expr
+                self.params[param_name].value = source_params[param_name].value
 
     @property
     def stages(self):
