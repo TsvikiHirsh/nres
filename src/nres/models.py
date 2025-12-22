@@ -782,6 +782,12 @@ class TransmissionModel(lmfit.Model):
 
                             if verbose:
                                 print(f"      {isotope_name}: χ²/dof = {test_fit.redchi:.4f}")
+
+                            # Add this isotope test as a separate stage in the results
+                            stage_results.append(test_fit)
+                            resolved_param_groups.append(non_weight_params)
+                            stage_names.append(f"{stage_name} (test: {isotope_name})")
+
                         except Exception as e:
                             warnings.warn(f"Fitting failed for {isotope_name}: {e}")
                             isotope_results.append({
@@ -825,23 +831,6 @@ class TransmissionModel(lmfit.Model):
                     # The weights are now fixed, so we continue to the next stage
                     # Add the stage to cumulative params (the non-weight params were fitted)
                     cumulative_params.update([p for p in group if not re.compile(r"p\d+").match(p)])
-
-                    # Create a summary entry for this pick-one stage
-                    summary = {
-                        "stage": stage_num,
-                        "stage_name": stage_name,
-                        "fitted_params": group,
-                        "emin": stage_emin,
-                        "emax": stage_emax,
-                        "redchi": best_result['redchi'],
-                        "pick_one_mode": True,
-                        "best_isotope": best_isotope
-                    }
-                    for name, par in params.items():
-                        summary[f"{name}_value"] = par.value
-                        summary[f"{name}_stderr"] = None  # No stderr for fixed weights
-                        summary[f"{name}_vary"] = name in cumulative_params
-                    stage_summaries.append(summary)
 
                     # Create a fake fit_result for consistency
                     class PickOneFitResult:
