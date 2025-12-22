@@ -655,7 +655,10 @@ class TransmissionModel(lmfit.Model):
 
         stage_results = []
         stage_summaries = []
-        cumulative_params = set()  # Track parameters that have been refined (accumulative Rietveld)
+        # Lists to collect final stages (including pick-one isotope tests)
+        final_stage_results = []
+        final_stage_names = []
+        final_resolved_param_groups = []
         cumulative_params = set()  # Track parameters that have been refined (accumulative Rietveld)
 
         def extract_pickleable_attributes(fit_result):
@@ -783,10 +786,10 @@ class TransmissionModel(lmfit.Model):
                             if verbose:
                                 print(f"      {isotope_name}: χ²/dof = {test_fit.redchi:.4f}")
 
-                            # Add this isotope test as a separate stage in the results
-                            stage_results.append(test_fit)
-                            resolved_param_groups.append(non_weight_params)
-                            stage_names.append(f"{stage_name} (test: {isotope_name})")
+                            # Add this isotope test as a separate stage in the final results
+                            final_stage_results.append(test_fit)
+                            final_resolved_param_groups.append(non_weight_params)
+                            final_stage_names.append(f"{stage_name} (test: {isotope_name})")
 
                         except Exception as e:
                             warnings.warn(f"Fitting failed for {isotope_name}: {e}")
@@ -853,16 +856,12 @@ class TransmissionModel(lmfit.Model):
                             self.errorbars = False
                             self.ci_out = None
 
-                    fit_result = PickOneFitResult(params, best_result['redchi'])
-                    stripped_result = extract_pickleable_attributes(fit_result)
-                    stage_results.append(stripped_result)
-
                     iterator.set_description(f"Stage {stage_num}/{len(stage_names)}")
 
                     if verbose:
                         print(f"  {stage_name} completed with pick-one. Selected {best_isotope}, χ²/dof = {best_result['redchi']:.4f}")
 
-                    # Skip the normal fitting for this stage
+                    # Skip the normal fitting for this stage (isotope tests already added to final lists)
                     continue
 
             # Accumulate parameters across stages (True Rietveld approach)
@@ -922,6 +921,10 @@ class TransmissionModel(lmfit.Model):
             stripped_result = extract_pickleable_attributes(fit_result)
 
             stage_results.append(stripped_result)
+            # Also add to final results (for stages_summary)
+            final_stage_results.append(stripped_result)
+            final_stage_names.append(stage_name)
+            final_resolved_param_groups.append(group)
 
             # Build summary
             varied_params = list(cumulative_params)  # Track cumulative parameters
@@ -954,7 +957,12 @@ class TransmissionModel(lmfit.Model):
 
         self.fit_result = fit_result
         self.fit_stages = stage_results
-        self.stages_summary = self._create_stages_summary_table_enhanced(stage_results, resolved_param_groups, stage_names)
+        # Use final lists (which include pick-one isotope tests) for stages_summary
+        self.stages_summary = self._create_stages_summary_table_enhanced(
+            final_stage_results if final_stage_results else stage_results,
+            final_resolved_param_groups if final_resolved_param_groups else resolved_param_groups,
+            final_stage_names if final_stage_names else stage_names
+        )
 
         # Attach plotting methods and other attributes
         fit_result.plot = self.plot
