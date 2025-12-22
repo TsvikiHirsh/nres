@@ -36,6 +36,7 @@ dependencies = [
   "setuptools",
   "tqdm",
   "mendeleev",
+  "joblib",
   "trinidi-data @ git+https://github.com/TsvikiHirsh/trinidi-data.git@main"
 ]
 
