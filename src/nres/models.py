@@ -339,6 +339,10 @@ class TransmissionModel(lmfit.Model):
         print(result.stages_summary)
         ```
         """
+        # Use self.stages if param_groups not provided
+        if param_groups is None and hasattr(self, 'stages') and self.stages is not None:
+            param_groups = self.stages
+
         # Check if data is grouped and route to parallel fitting
         if hasattr(data, 'is_grouped') and data.is_grouped:
             n_jobs = kwargs.pop('n_jobs', 10)
@@ -355,8 +359,8 @@ class TransmissionModel(lmfit.Model):
                 **kwargs
             )
 
-        # Route to Rietveld if requested
-        if method == "rietveld":
+        # Route to Rietveld if requested (or if param_groups/stages provided)
+        if method == "rietveld" or param_groups is not None:
             return self._rietveld_fit(
                 data, params, emin, emax,
                 verbose=verbose,
