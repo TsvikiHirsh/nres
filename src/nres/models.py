@@ -468,6 +468,12 @@ class TransmissionModel(lmfit.Model):
               the fit tries each cross-section material individually with weight=1 (others at 0),
               then selects the isotope with the best fit quality (lowest reduced chi-squared).
               The selected isotope is fixed at weight=1 with all others at weight=0.
+            Groups of parameters to fit in each stage. Can contain special keywords:
+            - "emin=<value>" or "emax=<value>": override energy bounds for that stage
+            - "pick-one" or "pick_one": enable pick-one mode for isotope selection. In this mode,
+              the fit tries each cross-section material individually with weight=1 (others at 0),
+              then selects the isotope with the best fit quality (lowest reduced chi-squared).
+              The selected isotope is fixed at weight=1 with all others at weight=0.
         kwargs : dict, optional
             Additional keyword arguments for the fit method, such as weights, method, etc.
 
@@ -551,6 +557,10 @@ class TransmissionModel(lmfit.Model):
                                 print(f"  Override emax detected: {overrides['emax']}")
                         except ValueError:
                             warnings.warn(f"Invalid emax value in group: {item}")
+                    elif item == "pick-one" or item == "pick_one":
+                        overrides['pick_one'] = True
+                        if verbose:
+                            print(f"  Pick-one mode detected: will test each isotope individually")
                     elif item == "pick-one" or item == "pick_one":
                         overrides['pick_one'] = True
                         if verbose:
