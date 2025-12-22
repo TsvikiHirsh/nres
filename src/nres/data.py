@@ -107,7 +107,8 @@ class Data:
             Flight path scale factor from vary_tof optimization. Default is 1.0.
             Values > 1.0 indicate a longer path, < 1.0 a shorter path.
         t0 : float, optional
-            Time offset correction (in tof units) from vary_tof optimization. Default is 0.0.
+            Time offset correction in seconds from vary_tof optimization. Default is 0.0.
+            Will be converted to TOF channel units internally using tstep.
         verbosity : int, optional
             Verbosity level. If 0, suppresses warnings from sqrt operations. Default is 1.
 
@@ -120,9 +121,10 @@ class Data:
         signal = cls._read_counts(signal)
         openbeam = cls._read_counts(openbeam)
 
-        # Apply L0 and t0 corrections using the same formula as in TransmissionModel._tof_correction
-        # dtof = (1.0 - L0) * tof + t0, then corrected_tof = tof + dtof
-        dtof = (1.0 - L0) * signal["tof"] + t0
+        # Apply L0 and t0 corrections
+        # Note: signal["tof"] is in TOF channel units, t0 is in seconds
+        # Convert t0 to TOF channel units by dividing by tstep
+        dtof = (1.0 - L0) * signal["tof"] + t0 / tstep
         corrected_tof = signal["tof"] + dtof
 
         # Convert corrected tof to energy using provided time step and distance
@@ -170,6 +172,10 @@ class Data:
         self_data.openbeam = openbeam
         self_data.L = L
         self_data.tstep = tstep
+
+        # Store L0 and t0 values to indicate TOF correction was applied
+        self_data.L0 = L0
+        self_data.t0 = t0
 
         return self_data
 
@@ -389,7 +395,8 @@ class Data:
         L0 : float, optional
             Flight path scale factor from vary_tof optimization. Default is 1.0.
         t0 : float, optional
-            Time offset correction (in tof units) from vary_tof optimization. Default is 0.0.
+            Time offset correction in seconds from vary_tof optimization. Default is 0.0.
+            Will be converted to TOF channel units internally using tstep.
         pattern : str, optional
             Coordinate extraction pattern. Default is "auto" which tries common patterns:
             - "x{x}_y{y}" for 2D grids (e.g., "grid_x10_y20.csv")
@@ -501,6 +508,10 @@ class Data:
         self_data.groups = {}
         self_data.L = L
         self_data.tstep = tstep
+
+        # Store L0 and t0 values to indicate TOF correction was applied
+        self_data.L0 = L0
+        self_data.t0 = t0
 
         # Helper function to load a single group
         def load_single_group(i, idx):
