@@ -454,5 +454,9 @@ def register_material(name, components, fractions=None, fraction_type='atomic', 
     else:
         # Use the weighted average of component n values
         material['n'] = total_n
-    
+
+    # Register the material in the global materials dictionary
+    import nres
+    nres.materials[name] = material
+
     return material
