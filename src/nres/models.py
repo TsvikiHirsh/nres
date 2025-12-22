@@ -555,10 +555,6 @@ class TransmissionModel(lmfit.Model):
                         overrides['pick_one'] = True
                         if verbose:
                             print(f"  Pick-one mode detected: will test each isotope individually")
-                    elif item == "pick-one" or item == "pick_one":
-                        overrides['pick_one'] = True
-                        if verbose:
-                            print(f"  Pick-one mode detected: will test each isotope individually")
                     else:
                         params_list.extend(resolve_single_param_or_group(item))
                 elif isinstance(item, list):
