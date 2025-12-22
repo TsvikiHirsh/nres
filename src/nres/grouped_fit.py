@@ -308,7 +308,7 @@ class GroupedFitResult:
         """String representation."""
         return f"GroupedFitResult({len(self.results)} groups, shape={self.group_shape})"
 
-    def plot(self, index, **kwargs):
+    def plot(self, index, stage=None, **kwargs):
         """
         Plot a specific group's fit result.
 
@@ -319,6 +319,9 @@ class GroupedFitResult:
             - For 2D grids: can use tuple (0, 0) or string "(0,0)" or "(0, 0)"
             - For 1D arrays: can use int 5 or string "5"
             - For named groups: use string "groupname"
+        stage : int, optional
+            If provided, plot results from a specific Rietveld fitting stage (1-indexed).
+            Only works if Rietveld fitting has been performed.
         **kwargs
             Additional plotting parameters passed to result.plot().
 
@@ -359,7 +362,7 @@ class GroupedFitResult:
         original_fit_result = getattr(model, 'fit_result', None)
         try:
             model.fit_result = fit_result
-            return model.plot(**kwargs)
+            return model.plot(stage=stage, **kwargs)
         finally:
             # Restore original fit_result
             if original_fit_result is not None:
@@ -367,7 +370,7 @@ class GroupedFitResult:
             elif hasattr(model, 'fit_result'):
                 delattr(model, 'fit_result')
 
-    def plot_total_xs(self, index, **kwargs):
+    def plot_total_xs(self, index, stage=None, **kwargs):
         """
         Plot the total cross-section for a specific group.
 
@@ -378,6 +381,10 @@ class GroupedFitResult:
             - For 2D grids: can use tuple (0, 0) or string "(0, 0)"
             - For 1D arrays: can use int 5 or string "5"
             - For named groups: use string "groupname"
+        stage : int, optional
+            If provided, plot cross-section using parameters from a specific
+            Rietveld fitting stage (1-indexed). Only works if Rietveld fitting
+            has been performed.
         **kwargs
             Additional plotting parameters passed to CrossSection.plot().
 
@@ -390,6 +397,7 @@ class GroupedFitResult:
         ---------
         >>> result.plot_total_xs(index=0)
         >>> result.plot_total_xs(index=(0, 0), title="Cross Section")
+        >>> result.plot_total_xs(index=0, stage=2)  # Plot stage 2 weights
         """
         # Normalize index for consistent lookup
         normalized_index = self._normalize_index(index)
@@ -407,8 +415,29 @@ class GroupedFitResult:
                 f"Cannot plot cross section for index {index}: model or cross section not available."
             )
 
-        # Plot the cross-section
-        return model.cross_section.plot(**kwargs)
+        # If stage is specified, update cross-section weights from that stage
+        if stage is not None:
+            if not hasattr(model, "fit_stages") or not model.fit_stages:
+                raise ValueError("No Rietveld stages available. Perform Rietveld fit first.")
+
+            if stage < 1 or stage > len(model.fit_stages):
+                raise ValueError(f"Stage {stage} not available. Available stages: 1-{len(model.fit_stages)}")
+
+            # Get stage parameters
+            stage_result = model.fit_stages[stage - 1]  # Convert to 0-indexed
+
+            # Update cross-section weights temporarily
+            original_weights = model.cross_section.weights.copy()
+            try:
+                # Extract weight parameters from stage result
+                model.cross_section.update_weights(stage_result.params)
+                return model.cross_section.plot(**kwargs)
+            finally:
+                # Restore original weights
+                model.cross_section.weights = original_weights
+        else:
+            # Plot the cross-section with current weights
+            return model.cross_section.plot(**kwargs)
 
     def _repr_html_(self):
         """

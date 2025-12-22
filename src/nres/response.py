@@ -173,7 +173,8 @@ class Background:
         E (np.ndarray): Energy values.
         b0 (float): Constant background value.
         """
-        return np.full_like(E, b0)
+        bg = np.full_like(E, b0)
+        return np.maximum(0, bg)
 
     def polynomial3_background(self, E, b0=0., b1=1., b2=0., **kwargs):
         """
@@ -185,7 +186,7 @@ class Background:
         b1 (float): Linear term.
         b2 (float): Quadratic term.
         """
-        return b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E)
+        return np.maximum(0, b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E))
 
     def polynomial5_background(self, E, b0=0., b1=1., b2=0., b3=0., b4=0., **kwargs):
         """
@@ -199,7 +200,7 @@ class Background:
         b3 (float): Cubic term.
         b4 (float): Quartic term.
         """
-        return b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E) + b3 * E + b4 * E**2
+        return np.maximum(0, b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E) + b3 * E + b4 * E**2)
 
     def plot(self, E, params=None, **kwargs):
         """

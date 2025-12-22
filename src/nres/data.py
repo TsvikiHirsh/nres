@@ -667,7 +667,7 @@ class Data:
 
         return ax
 
-    def plot_map(self, emin=0.5e6, emax=20e6, **kwargs):
+    def plot_map(self, emin=0.5e6, emax=20e6, emin2=None, emax2=None, logT=False, n_density=None, sigma=None, **kwargs):
         """
         Plot transmission map averaged over energy range for grouped data.
 
@@ -677,6 +677,19 @@ class Data:
             Minimum energy for averaging (default: 0.5e6 eV).
         emax : float, optional
             Maximum energy for averaging (default: 20e6 eV).
+        emin2 : float, optional
+            Minimum energy for second energy range. If provided with emax2,
+            plots the ratio of transmissions: T(emin,emax) / T(emin2,emax2).
+        emax2 : float, optional
+            Maximum energy for second energy range.
+        logT : bool, optional
+            If True, plots -ln(T)/(n*sigma) as thickness estimate in cm (default: False).
+            Requires n_density and sigma parameters. According to Beer's law T=exp(-n*sigma*d),
+            this transformation gives an estimate of thickness d.
+        n_density : float, optional
+            Number density in atoms/cm^3 (required if logT=True).
+        sigma : float, optional
+            Average cross-section in barns (required if logT=True).
         **kwargs : dict, optional
             Additional plotting parameters:
             - cmap : str, optional
@@ -696,7 +709,7 @@ class Data:
         Raises:
         -------
         ValueError
-            If called on non-grouped data.
+            If called on non-grouped data, or if logT=True but n_density or sigma not provided.
 
         Examples:
         ---------
@@ -707,12 +720,28 @@ class Data:
         >>> # For 1D array data
         >>> data = Data.from_grouped("pixel_*.csv", "ob_*.csv")
         >>> data.plot_map(emin=0.5e6, emax=5e6)
+
+        >>> # Plot thickness estimate
+        >>> data.plot_map(emin=1e6, emax=10e6, logT=True, n_density=8.5e22, sigma=10.0)
+
+        >>> # Plot transmission ratio
+        >>> data.plot_map(emin=1e6, emax=5e6, emin2=5e6, emax2=10e6)
         """
         import matplotlib.pyplot as plt
         import numpy as np
 
         if not self.is_grouped:
             raise ValueError("plot_map only works for grouped data")
+
+        # Validate parameters
+        if logT and (n_density is None or sigma is None):
+            raise ValueError("logT=True requires both n_density and sigma parameters")
+
+        if (emin2 is not None or emax2 is not None) and not (emin2 is not None and emax2 is not None):
+            raise ValueError("Both emin2 and emax2 must be provided together")
+
+        if logT and (emin2 is not None or emax2 is not None):
+            raise ValueError("Cannot use both logT and transmission ratio (emin2/emax2) simultaneously")
 
         # Extract kwargs
         cmap = kwargs.pop("cmap", "viridis")
@@ -727,6 +756,33 @@ class Data:
             table = self.groups[idx]
             mask = (table['energy'] >= emin) & (table['energy'] <= emax)
             avg_trans[idx] = table.loc[mask, 'trans'].mean()
+
+        # Calculate second transmission map if requested (for ratio)
+        if emin2 is not None and emax2 is not None:
+            avg_trans2 = {}
+            for idx in self.indices:
+                table = self.groups[idx]
+                mask = (table['energy'] >= emin2) & (table['energy'] <= emax2)
+                avg_trans2[idx] = table.loc[mask, 'trans'].mean()
+
+            # Calculate ratio
+            for idx in self.indices:
+                if avg_trans2[idx] != 0:
+                    avg_trans[idx] = avg_trans[idx] / avg_trans2[idx]
+                else:
+                    avg_trans[idx] = np.nan
+
+        # Apply logT transformation if requested
+        if logT:
+            # Convert sigma from barns to cm^2 (1 barn = 1e-24 cm^2)
+            sigma_cm2 = sigma * 1e-24
+            for idx in self.indices:
+                trans_val = avg_trans[idx]
+                if trans_val > 0 and not np.isnan(trans_val):
+                    # -ln(T) / (n * sigma) = thickness in cm
+                    avg_trans[idx] = -np.log(trans_val) / (n_density * sigma_cm2)
+                else:
+                    avg_trans[idx] = np.nan
 
         # Create visualization based on group_shape
         if self.group_shape and len(self.group_shape) == 2:
@@ -773,10 +829,25 @@ class Data:
             ax.set_xlabel("X coordinate")
             ax.set_ylabel("Y coordinate")
             ax.set_aspect('equal')
+
+            # Set appropriate title and colorbar label based on mode
             if title is None:
-                title = f"Average Transmission Map ({emin:.2g}-{emax:.2g} eV)"
+                if logT:
+                    title = f"Thickness Estimate Map ({emin:.2g}-{emax:.2g} eV)"
+                elif emin2 is not None:
+                    title = f"Transmission Ratio Map ({emin:.2g}-{emax:.2g})/{emin2:.2g}-{emax2:.2g} eV)"
+                else:
+                    title = f"Average Transmission Map ({emin:.2g}-{emax:.2g} eV)"
+
+            if logT:
+                cbar_label = "Thickness [cm]"
+            elif emin2 is not None:
+                cbar_label = "Transmission Ratio"
+            else:
+                cbar_label = "Transmission"
+
             ax.set_title(title)
-            plt.colorbar(im, ax=ax, label="Transmission")
+            plt.colorbar(im, ax=ax, label=cbar_label)
             return ax
 
         elif self.group_shape and len(self.group_shape) == 1:
@@ -787,9 +858,21 @@ class Data:
             fig, ax = plt.subplots(figsize=figsize)
             ax.plot(indices_array, trans_values, 'o-', **kwargs)
             ax.set_xlabel("Pixel index")
-            ax.set_ylabel("Average Transmission")
-            if title is None:
-                title = f"Average Transmission ({emin:.2g}-{emax:.2g} eV)"
+
+            # Set appropriate ylabel and title based on mode
+            if logT:
+                ax.set_ylabel("Thickness [cm]")
+                if title is None:
+                    title = f"Thickness Estimate ({emin:.2g}-{emax:.2g} eV)"
+            elif emin2 is not None:
+                ax.set_ylabel("Transmission Ratio")
+                if title is None:
+                    title = f"Transmission Ratio ({emin:.2g}-{emax:.2g})/({emin2:.2g}-{emax2:.2g} eV)"
+            else:
+                ax.set_ylabel("Average Transmission")
+                if title is None:
+                    title = f"Average Transmission ({emin:.2g}-{emax:.2g} eV)"
+
             ax.set_title(title)
             ax.grid(True, alpha=0.3)
             return ax
@@ -803,9 +886,21 @@ class Data:
             ax.bar(positions, trans_values, **kwargs)
             ax.set_xticks(positions)
             ax.set_xticklabels(self.indices, rotation=45, ha='right')
-            ax.set_ylabel("Average Transmission")
-            if title is None:
-                title = f"Average Transmission ({emin:.2g}-{emax:.2g} eV)"
+
+            # Set appropriate ylabel and title based on mode
+            if logT:
+                ax.set_ylabel("Thickness [cm]")
+                if title is None:
+                    title = f"Thickness Estimate ({emin:.2g}-{emax:.2g} eV)"
+            elif emin2 is not None:
+                ax.set_ylabel("Transmission Ratio")
+                if title is None:
+                    title = f"Transmission Ratio ({emin:.2g}-{emax:.2g})/({emin2:.2g}-{emax2:.2g} eV)"
+            else:
+                ax.set_ylabel("Average Transmission")
+                if title is None:
+                    title = f"Average Transmission ({emin:.2g}-{emax:.2g} eV)"
+
             ax.set_title(title)
             plt.tight_layout()
             return ax
