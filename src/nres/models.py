@@ -760,7 +760,13 @@ class TransmissionModel(lmfit.Model):
                         for p in test_params.values():
                             p.vary = False
 
-                        # Only vary the parameters specified in the stage (excluding weights)
+                        # Vary all cumulative parameters from previous stages (Rietveld methodology)
+                        # This ensures parameters like 'thickness' from earlier stages remain active
+                        for param_name in cumulative_params:
+                            if param_name in test_params and param_name not in p_params:
+                                test_params[param_name].vary = True
+
+                        # Also vary non-weight parameters from current group
                         non_weight_params = [p for p in group if p not in p_params and not re.compile(r"p\d+").match(p)]
                         for param_name in non_weight_params:
                             if param_name in test_params:
