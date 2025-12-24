@@ -905,7 +905,7 @@ class Data:
             plt.tight_layout()
             return ax
 
-    def rebin(self, n=None, tstep=None):
+    def rebin(self, n=None, tstep=None, linear_bins=True):
         """
         Rebin the time-of-flight data by combining bins or using a new time step.
 
@@ -923,6 +923,13 @@ class Data:
             New time step in seconds. Uses linear interpolation if the new bins
             don't align with the original bins.
             Mutually exclusive with n.
+        linear_bins : bool, optional
+            If True (default), creates linearly-spaced bins when using tstep parameter.
+            If False, creates logarithmically-spaced bins in energy space, which is
+            more appropriate for cross-section data that varies logarithmically with energy.
+            Note: The cross-section C++ code assumes linear binning in time/energy,
+            so use linear_bins=True for compatibility with the response function integration.
+            Only affects tstep method, ignored for n method.
 
         Returns:
         --------
@@ -968,74 +975,143 @@ class Data:
                            "This Data object was likely created from transmission files.")
 
         # Helper function to rebin a single counts DataFrame
-        def rebin_counts_dataframe(df, n_bins=None, new_tstep=None, old_tstep=None, L=None):
+        def rebin_counts_dataframe(df, n_bins=None, new_tstep=None, old_tstep=None, L=None, linear=True):
             """
             Rebin a counts DataFrame (tof, counts, err).
 
-            Returns a new DataFrame with rebinned data.
+            Parameters:
+            -----------
+            df : pd.DataFrame
+                Input DataFrame with 'tof', 'counts', 'err' columns
+            n_bins : int, optional
+                Number of bins to combine (simple binning)
+            new_tstep : float, optional
+                New time step (interpolation method)
+            old_tstep : float, optional
+                Original time step
+            L : float, optional
+                Flight path length for energy conversion
+            linear : bool, optional
+                If True, use linear spacing. If False, use logarithmic spacing in energy.
+
+            Returns:
+            --------
+            pd.DataFrame
+                Rebinned DataFrame
             """
             if n_bins is not None:
                 # Simple binning: combine every n_bins
-                n_original = len(df)
-                n_new = n_original // n_bins
+                if n_bins == 1:
+                    # No rebinning needed, return copy of original
+                    rebinned_df = df.copy()
+                else:
+                    n_original = len(df)
+                    n_new = n_original // n_bins
 
-                # Truncate to make evenly divisible
-                df_truncated = df.iloc[:n_new * n_bins].copy()
+                    # Truncate to make evenly divisible
+                    df_truncated = df.iloc[:n_new * n_bins].copy()
 
-                # Reshape and sum
-                tof_reshaped = df_truncated['tof'].values.reshape(n_new, n_bins)
-                counts_reshaped = df_truncated['counts'].values.reshape(n_new, n_bins)
-                err_reshaped = df_truncated['err'].values.reshape(n_new, n_bins)
+                    # Reshape and sum
+                    tof_reshaped = df_truncated['tof'].values.reshape(n_new, n_bins)
+                    counts_reshaped = df_truncated['counts'].values.reshape(n_new, n_bins)
+                    err_reshaped = df_truncated['err'].values.reshape(n_new, n_bins)
 
-                # New tof is the center of each combined bin
-                new_tof = tof_reshaped.mean(axis=1)
-                # Sum counts
-                new_counts = counts_reshaped.sum(axis=1)
-                # Combine errors in quadrature
-                new_err = np.sqrt((err_reshaped**2).sum(axis=1))
+                    # New tof is the END of each combined bin (histogram convention)
+                    # This represents the right edge of the bin, which is what the C++ integration code expects
+                    new_tof = tof_reshaped[:, -1]  # Last element of each row = bin end
+                    # Sum counts
+                    new_counts = counts_reshaped.sum(axis=1)
+                    # Combine errors in quadrature
+                    new_err = np.sqrt((err_reshaped**2).sum(axis=1))
 
-                rebinned_df = pd.DataFrame({
-                    'tof': new_tof,
-                    'counts': new_counts,
-                    'err': new_err
-                })
+                    rebinned_df = pd.DataFrame({
+                        'tof': new_tof,
+                        'counts': new_counts,
+                        'err': new_err
+                    })
 
             else:
                 # Interpolation method: new tstep
-                from scipy.interpolate import interp1d
+                # Check if we're using the same tstep
+                if abs(new_tstep - old_tstep) / old_tstep < 1e-10:
+                    # No rebinning needed, return copy of original
+                    rebinned_df = df.copy()
+                else:
+                    from scipy.interpolate import interp1d
 
-                # Original tof grid in time units (seconds)
-                old_tof_time = df['tof'].values * old_tstep
+                    # Original tof grid in time units (seconds)
+                    old_tof_time = df['tof'].values * old_tstep
 
-                # Create new tof grid
-                tof_min = old_tof_time.min()
-                tof_max = old_tof_time.max()
-                n_new_bins = int((tof_max - tof_min) / new_tstep)
-                new_tof_time = np.linspace(tof_min, tof_max, n_new_bins)
+                    # Create new tof grid based on linear or logarithmic spacing
+                    tof_min = old_tof_time.min()
+                    tof_max = old_tof_time.max()
 
-                # Interpolate counts and errors
-                # For counts: linear interpolation (represents count rate)
-                counts_interp = interp1d(old_tof_time, df['counts'].values,
-                                        kind='linear', fill_value=0, bounds_error=False)
-                err_interp = interp1d(old_tof_time, df['err'].values,
-                                     kind='linear', fill_value=0, bounds_error=False)
+                    if linear:
+                        # Linear spacing in time
+                        n_new_bins = int((tof_max - tof_min) / new_tstep)
+                        new_tof_time = np.linspace(tof_min, tof_max, n_new_bins)
+                    else:
+                        # Logarithmic spacing in energy
+                        # Convert to energy for log spacing
+                        e_min = utils.time2energy(tof_max, L)  # Note: max time = min energy
+                        e_max = utils.time2energy(tof_min, L)  # Note: min time = max energy
 
-                new_counts = counts_interp(new_tof_time)
-                new_err = err_interp(new_tof_time)
+                        # Create logarithmic energy grid
+                        # Estimate number of bins to get approximately the desired tstep
+                        n_new_bins = max(10, int((tof_max - tof_min) / new_tstep))
+                        new_energies = np.logspace(np.log10(e_min), np.log10(e_max), n_new_bins)
 
-                # Scale by the ratio of bin widths to conserve total counts
-                bin_width_ratio = new_tstep / old_tstep
-                new_counts = new_counts * bin_width_ratio
-                new_err = new_err * bin_width_ratio
+                        # Convert back to time
+                        new_tof_time = utils.energy2time(new_energies, L)
+                        # Sort in ascending time order
+                        new_tof_time = np.sort(new_tof_time)
 
-                # Convert back to bin indices
-                new_tof = new_tof_time / new_tstep
+                    # Interpolate counts and errors
+                    # For counts: linear interpolation (represents count rate)
+                    counts_interp = interp1d(old_tof_time, df['counts'].values,
+                                            kind='linear', fill_value=0, bounds_error=False)
+                    err_interp = interp1d(old_tof_time, df['err'].values,
+                                         kind='linear', fill_value=0, bounds_error=False)
 
-                rebinned_df = pd.DataFrame({
-                    'tof': new_tof,
-                    'counts': new_counts,
-                    'err': new_err
-                })
+                    new_counts = counts_interp(new_tof_time)
+                    new_err = err_interp(new_tof_time)
+
+                    if linear:
+                        # For linear binning, scale by the ratio of bin widths to conserve total counts
+                        bin_width_ratio = new_tstep / old_tstep
+                        new_counts = new_counts * bin_width_ratio
+                        new_err = new_err * bin_width_ratio
+                    else:
+                        # For logarithmic binning, scale by the actual bin width ratio at each point
+                        # Calculate bin widths (approximate using differences)
+                        old_bin_widths = np.diff(old_tof_time, prepend=old_tof_time[0] - old_tstep)
+                        new_bin_widths = np.diff(new_tof_time, prepend=new_tof_time[0] - (new_tof_time[1] - new_tof_time[0]))
+
+                        # Interpolate the old bin widths to new positions
+                        old_width_interp = interp1d(old_tof_time, old_bin_widths,
+                                                   kind='linear', fill_value='extrapolate')
+                        old_widths_at_new = old_width_interp(new_tof_time)
+
+                        # Scale counts by bin width ratio
+                        bin_width_ratios = new_bin_widths / old_widths_at_new
+                        new_counts = new_counts * bin_width_ratios
+                        new_err = new_err * bin_width_ratios
+
+                    # Convert back to bin indices
+                    # For histogram convention, this should represent bin END times
+                    if linear:
+                        new_tof = new_tof_time / new_tstep
+                    else:
+                        # For nonlinear, we need to store actual time values
+                        # Use average tstep for indexing
+                        avg_tstep = np.mean(np.diff(new_tof_time))
+                        new_tof = new_tof_time / avg_tstep
+
+                    rebinned_df = pd.DataFrame({
+                        'tof': new_tof,
+                        'counts': new_counts,
+                        'err': new_err
+                    })
 
             # Preserve label attribute if present
             if hasattr(df, 'attrs') and 'label' in df.attrs:
@@ -1111,11 +1187,11 @@ class Data:
             # Rebin non-grouped data
             rebinned_signal = rebin_counts_dataframe(
                 self.signal, n_bins=n, new_tstep=tstep,
-                old_tstep=self.tstep, L=self.L
+                old_tstep=self.tstep, L=self.L, linear=linear_bins
             )
             rebinned_openbeam = rebin_counts_dataframe(
                 self.openbeam, n_bins=n, new_tstep=tstep,
-                old_tstep=self.tstep, L=self.L
+                old_tstep=self.tstep, L=self.L, linear=linear_bins
             )
 
             # Calculate transmission table
