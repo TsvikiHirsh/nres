@@ -28,7 +28,7 @@ dependencies = [
   "scipy",
   "pandas",
   "numpy",
-  "matplotlib", 
+  "matplotlib",
   "materials-compendium",
   "lmfit",
   "pybind11",
@@ -38,6 +38,7 @@ dependencies = [
   "mendeleev",
   "joblib",
   "trinidi-data @ git+https://github.com/TsvikiHirsh/trinidi-data.git@main"
+  "platformdirs",
 ]
 
 [project.optional-dependencies]
