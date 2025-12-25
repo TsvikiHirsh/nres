@@ -7,7 +7,8 @@ from lmfit import Parameters
 class MockCrossSection:
     def __init__(self, isotopes):
         self.isotopes = isotopes
-    
+        self.materials = {}  # Required by TransmissionModel
+
     def __call__(self, E):
         # Return a dummy cross-section value that scales with energy
         return sum(self.isotopes.values()) * np.sqrt(E)

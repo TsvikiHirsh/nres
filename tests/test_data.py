@@ -424,7 +424,7 @@ class TestDataBackgroundCorrectedRebin:
         empty_openbeam_file = tmp_path / "empty_openbeam.csv"
 
         # Create mock data (similar to user's test case)
-        tof = np.arange(1000)
+        tof = np.arange(1, 1001)  # Start from 1 to avoid division by zero in energy calculation
         signal_counts = np.random.poisson(200, size=1000).astype(float)
         openbeam_counts = np.random.poisson(400, size=1000).astype(float)
         empty_signal_counts = np.random.poisson(50, size=1000).astype(float)
@@ -474,7 +474,7 @@ class TestDataBackgroundCorrectedRebin:
         empty_openbeam_file = tmp_path / "empty_openbeam.csv"
 
         # Create mock data
-        tof = np.arange(1000)
+        tof = np.arange(1, 1001)  # Start from 1 to avoid division by zero in energy calculation
         signal_counts = np.random.poisson(200, size=1000).astype(float)
         openbeam_counts = np.random.poisson(400, size=1000).astype(float)
         empty_signal_counts = np.random.poisson(50, size=1000).astype(float)
