@@ -13,6 +13,11 @@ Features
 - Methods to define response functions and background functions.
 - Plotting utilities for concise result visualization.
 - Fast cross-section integration and convolution with response function using C++ core code.
+- **NEW in v0.4**: Grouped data support for imaging detectors and multi-sample measurements.
+- **NEW in v0.4**: Advanced rebinning capabilities for time-of-flight data.
+- **NEW in v0.4**: Parallel fitting with progress tracking and memory management.
+- **NEW in v0.4**: Save/load functionality for models and results.
+- **NEW in v0.4**: Enhanced visualization with transmission maps and multi-parameter plots.
 
 Installation
 ------------
