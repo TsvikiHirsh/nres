@@ -412,5 +412,111 @@ class TestDataPlot:
             data.plot_map()
 
 
+class TestDataBackgroundCorrectedRebin:
+    """Test that rebin preserves background correction"""
+
+    def test_rebin_preserves_background_correction_same_tstep(self, tmp_path):
+        """Test that rebinning with same tstep preserves transmission when using background correction"""
+        # Create test files
+        signal_file = tmp_path / "signal.csv"
+        openbeam_file = tmp_path / "openbeam.csv"
+        empty_signal_file = tmp_path / "empty_signal.csv"
+        empty_openbeam_file = tmp_path / "empty_openbeam.csv"
+
+        # Create mock data (similar to user's test case)
+        tof = np.arange(1000)
+        signal_counts = np.random.poisson(200, size=1000).astype(float)
+        openbeam_counts = np.random.poisson(400, size=1000).astype(float)
+        empty_signal_counts = np.random.poisson(50, size=1000).astype(float)
+        empty_openbeam_counts = np.random.poisson(50, size=1000).astype(float)
+
+        # Write files
+        pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
+            signal_file, index=False
+        )
+        pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
+            openbeam_file, index=False
+        )
+        pd.DataFrame({"tof": tof, "counts": empty_signal_counts, "err": np.sqrt(empty_signal_counts)}).to_csv(
+            empty_signal_file, index=False
+        )
+        pd.DataFrame({"tof": tof, "counts": empty_openbeam_counts, "err": np.sqrt(empty_openbeam_counts)}).to_csv(
+            empty_openbeam_file, index=False
+        )
+
+        # Load data with background correction
+        data = Data.from_counts(
+            str(signal_file), str(openbeam_file),
+            str(empty_signal_file), str(empty_openbeam_file),
+            L=10.85, tstep=1.5625e-9, verbosity=0
+        )
+
+        # Rebin with same tstep (should be identity operation for transmission)
+        data_rebinned = data.rebin(tstep=data.tstep)
+
+        # Check signal counts are preserved
+        assert np.allclose(data.signal["counts"].values, data_rebinned.signal["counts"].values)
+
+        # Check transmission is preserved (ratio should be ~1.0)
+        mean_trans_original = data.table["trans"].mean()
+        mean_trans_rebinned = data_rebinned.table["trans"].mean()
+        ratio = mean_trans_rebinned / mean_trans_original
+
+        # Ratio should be very close to 1.0 (within numerical precision)
+        assert abs(ratio - 1.0) < 1e-10, f"Transmission ratio is {ratio}, expected ~1.0"
+
+    def test_rebin_preserves_background_correction_different_tstep(self, tmp_path):
+        """Test that rebinning with different tstep properly applies background correction"""
+        # Create test files
+        signal_file = tmp_path / "signal.csv"
+        openbeam_file = tmp_path / "openbeam.csv"
+        empty_signal_file = tmp_path / "empty_signal.csv"
+        empty_openbeam_file = tmp_path / "empty_openbeam.csv"
+
+        # Create mock data
+        tof = np.arange(1000)
+        signal_counts = np.random.poisson(200, size=1000).astype(float)
+        openbeam_counts = np.random.poisson(400, size=1000).astype(float)
+        empty_signal_counts = np.random.poisson(50, size=1000).astype(float)
+        empty_openbeam_counts = np.random.poisson(50, size=1000).astype(float)
+
+        # Write files
+        pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
+            signal_file, index=False
+        )
+        pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
+            openbeam_file, index=False
+        )
+        pd.DataFrame({"tof": tof, "counts": empty_signal_counts, "err": np.sqrt(empty_signal_counts)}).to_csv(
+            empty_signal_file, index=False
+        )
+        pd.DataFrame({"tof": tof, "counts": empty_openbeam_counts, "err": np.sqrt(empty_openbeam_counts)}).to_csv(
+            empty_openbeam_file, index=False
+        )
+
+        # Load data with background correction
+        data = Data.from_counts(
+            str(signal_file), str(openbeam_file),
+            str(empty_signal_file), str(empty_openbeam_file),
+            L=10.85, tstep=1.5625e-9, verbosity=0
+        )
+
+        # Rebin with n=2 (combine 2 bins)
+        data_rebinned = data.rebin(n=2)
+
+        # Check that empty data is properly stored and rebinned
+        assert data_rebinned.empty_signal is not None
+        assert data_rebinned.empty_openbeam is not None
+        assert len(data_rebinned.empty_signal) == len(data_rebinned.signal)
+
+        # The mean transmission should be roughly similar (within statistical fluctuations)
+        # Since we're combining bins, there will be some statistical variation
+        mean_trans_original = data.table["trans"].mean()
+        mean_trans_rebinned = data_rebinned.table["trans"].mean()
+
+        # Allow 10% variation due to binning effects
+        assert abs(mean_trans_rebinned - mean_trans_original) / mean_trans_original < 0.1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -179,6 +179,16 @@ class Data:
         self_data.L0 = L0
         self_data.t0 = t0
 
+        # Store empty signal/openbeam if provided (for proper rebinning)
+        # Note: At this point, if background correction was applied, empty_signal
+        # and empty_openbeam have been reassigned to DataFrames (line 148-149)
+        if empty_signal is not None and empty_openbeam is not None and isinstance(empty_signal, pd.DataFrame):
+            self_data.empty_signal = empty_signal
+            self_data.empty_openbeam = empty_openbeam
+        else:
+            self_data.empty_signal = None
+            self_data.empty_openbeam = None
+
         return self_data
 
     def _normalize_index(self, index):
@@ -905,7 +915,7 @@ class Data:
             plt.tight_layout()
             return ax
 
-    def rebin(self, n=None, tstep=None, linear_bins=True):
+    def rebin(self, n=None, tstep=None):
         """
         Rebin the time-of-flight data by combining bins or using a new time step.
 
@@ -975,7 +985,7 @@ class Data:
                            "This Data object was likely created from transmission files.")
 
         # Helper function to rebin a single counts DataFrame
-        def rebin_counts_dataframe(df, n_bins=None, new_tstep=None, old_tstep=None, L=None, linear=True):
+        def rebin_counts_dataframe(df, n_bins=None, new_tstep=None, old_tstep=None, L=None):
             """
             Rebin a counts DataFrame (tof, counts, err).
 
@@ -991,8 +1001,6 @@ class Data:
                 Original time step
             L : float, optional
                 Flight path length for energy conversion
-            linear : bool, optional
-                If True, use linear spacing. If False, use logarithmic spacing in energy.
 
             Returns:
             --------
@@ -1016,9 +1024,10 @@ class Data:
                     counts_reshaped = df_truncated['counts'].values.reshape(n_new, n_bins)
                     err_reshaped = df_truncated['err'].values.reshape(n_new, n_bins)
 
-                    # New tof is the END of each combined bin (histogram convention)
-                    # This represents the right edge of the bin, which is what the C++ integration code expects
-                    new_tof = tof_reshaped[:, -1]  # Last element of each row = bin end
+                    # New tof is the CENTER of each combined bin
+                    # For bins [i, i+1, ..., i+n-1], the center is at (i + i+n-1 + 1) / 2
+                    # This gives the correct energy for the rebinned data
+                    new_tof = (tof_reshaped[:, 0] + tof_reshaped[:, -1] + 1) / 2
                     # Sum counts
                     new_counts = counts_reshaped.sum(axis=1)
                     # Combine errors in quadrature
@@ -1042,29 +1051,11 @@ class Data:
                     # Original tof grid in time units (seconds)
                     old_tof_time = df['tof'].values * old_tstep
 
-                    # Create new tof grid based on linear or logarithmic spacing
+                    # Create new tof grid with linear spacing
                     tof_min = old_tof_time.min()
                     tof_max = old_tof_time.max()
-
-                    if linear:
-                        # Linear spacing in time
-                        n_new_bins = int((tof_max - tof_min) / new_tstep)
-                        new_tof_time = np.linspace(tof_min, tof_max, n_new_bins)
-                    else:
-                        # Logarithmic spacing in energy
-                        # Convert to energy for log spacing
-                        e_min = utils.time2energy(tof_max, L)  # Note: max time = min energy
-                        e_max = utils.time2energy(tof_min, L)  # Note: min time = max energy
-
-                        # Create logarithmic energy grid
-                        # Estimate number of bins to get approximately the desired tstep
-                        n_new_bins = max(10, int((tof_max - tof_min) / new_tstep))
-                        new_energies = np.logspace(np.log10(e_min), np.log10(e_max), n_new_bins)
-
-                        # Convert back to time
-                        new_tof_time = utils.energy2time(new_energies, L)
-                        # Sort in ascending time order
-                        new_tof_time = np.sort(new_tof_time)
+                    n_new_bins = int((tof_max - tof_min) / new_tstep)
+                    new_tof_time = np.linspace(tof_min, tof_max, n_new_bins)
 
                     # Interpolate counts and errors
                     # For counts: linear interpolation (represents count rate)
@@ -1076,36 +1067,13 @@ class Data:
                     new_counts = counts_interp(new_tof_time)
                     new_err = err_interp(new_tof_time)
 
-                    if linear:
-                        # For linear binning, scale by the ratio of bin widths to conserve total counts
-                        bin_width_ratio = new_tstep / old_tstep
-                        new_counts = new_counts * bin_width_ratio
-                        new_err = new_err * bin_width_ratio
-                    else:
-                        # For logarithmic binning, scale by the actual bin width ratio at each point
-                        # Calculate bin widths (approximate using differences)
-                        old_bin_widths = np.diff(old_tof_time, prepend=old_tof_time[0] - old_tstep)
-                        new_bin_widths = np.diff(new_tof_time, prepend=new_tof_time[0] - (new_tof_time[1] - new_tof_time[0]))
+                    # Scale by the ratio of bin widths to conserve total counts
+                    bin_width_ratio = new_tstep / old_tstep
+                    new_counts = new_counts * bin_width_ratio
+                    new_err = new_err * bin_width_ratio
 
-                        # Interpolate the old bin widths to new positions
-                        old_width_interp = interp1d(old_tof_time, old_bin_widths,
-                                                   kind='linear', fill_value='extrapolate')
-                        old_widths_at_new = old_width_interp(new_tof_time)
-
-                        # Scale counts by bin width ratio
-                        bin_width_ratios = new_bin_widths / old_widths_at_new
-                        new_counts = new_counts * bin_width_ratios
-                        new_err = new_err * bin_width_ratios
-
-                    # Convert back to bin indices
-                    # For histogram convention, this should represent bin END times
-                    if linear:
-                        new_tof = new_tof_time / new_tstep
-                    else:
-                        # For nonlinear, we need to store actual time values
-                        # Use average tstep for indexing
-                        avg_tstep = np.mean(np.diff(new_tof_time))
-                        new_tof = new_tof_time / avg_tstep
+                    # Convert back to bin indices (bin centers)
+                    new_tof = new_tof_time / new_tstep
 
                     rebinned_df = pd.DataFrame({
                         'tof': new_tof,
@@ -1120,7 +1088,8 @@ class Data:
             return rebinned_df
 
         # Helper function to calculate transmission from rebinned counts
-        def calculate_transmission(signal_df, openbeam_df, new_tstep_val, L_val):
+        def calculate_transmission(signal_df, openbeam_df, new_tstep_val, L_val,
+                                   empty_signal_df=None, empty_openbeam_df=None):
             """Calculate transmission and energy from rebinned signal and openbeam."""
             # Convert tof to energy
             energy = utils.time2energy(signal_df['tof'].values * new_tstep_val, L_val)
@@ -1131,10 +1100,20 @@ class Data:
             # Calculate transmission error
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
-                trans_err = transmission * np.sqrt(
-                    (signal_df['err'] / signal_df['counts'])**2 +
-                    (openbeam_df['err'] / openbeam_df['counts'])**2
-                )
+                if empty_signal_df is not None and empty_openbeam_df is not None:
+                    # Apply background correction
+                    transmission *= empty_openbeam_df['counts'] / empty_signal_df['counts']
+                    trans_err = transmission * np.sqrt(
+                        (signal_df['err'] / signal_df['counts'])**2 +
+                        (openbeam_df['err'] / openbeam_df['counts'])**2 +
+                        (empty_signal_df['err'] / empty_signal_df['counts'])**2 +
+                        (empty_openbeam_df['err'] / empty_openbeam_df['counts'])**2
+                    )
+                else:
+                    trans_err = transmission * np.sqrt(
+                        (signal_df['err'] / signal_df['counts'])**2 +
+                        (openbeam_df['err'] / openbeam_df['counts'])**2
+                    )
 
             table_df = pd.DataFrame({
                 'energy': energy,
@@ -1152,7 +1131,9 @@ class Data:
         if tstep is not None:
             new_tstep = tstep
         else:
-            new_tstep = self.tstep * n
+            # When using n-binning, keep tstep the same since TOF indices
+            # are adjusted to bin centers
+            new_tstep = self.tstep
 
         # Create new Data object
         new_data = Data()
@@ -1187,22 +1168,41 @@ class Data:
             # Rebin non-grouped data
             rebinned_signal = rebin_counts_dataframe(
                 self.signal, n_bins=n, new_tstep=tstep,
-                old_tstep=self.tstep, L=self.L, linear=linear_bins
+                old_tstep=self.tstep, L=self.L
             )
             rebinned_openbeam = rebin_counts_dataframe(
                 self.openbeam, n_bins=n, new_tstep=tstep,
-                old_tstep=self.tstep, L=self.L, linear=linear_bins
+                old_tstep=self.tstep, L=self.L
             )
+
+            # Rebin empty data if it exists (for background correction)
+            rebinned_empty_signal = None
+            rebinned_empty_openbeam = None
+            if hasattr(self, 'empty_signal') and self.empty_signal is not None:
+                rebinned_empty_signal = rebin_counts_dataframe(
+                    self.empty_signal, n_bins=n, new_tstep=tstep,
+                    old_tstep=self.tstep, L=self.L
+                )
+            if hasattr(self, 'empty_openbeam') and self.empty_openbeam is not None:
+                rebinned_empty_openbeam = rebin_counts_dataframe(
+                    self.empty_openbeam, n_bins=n, new_tstep=tstep,
+                    old_tstep=self.tstep, L=self.L
+                )
 
             # Calculate transmission table
             new_table = calculate_transmission(
                 rebinned_signal, rebinned_openbeam,
-                new_tstep, self.L
+                new_tstep, self.L,
+                rebinned_empty_signal, rebinned_empty_openbeam
             )
 
             new_data.signal = rebinned_signal
             new_data.openbeam = rebinned_openbeam
             new_data.table = new_table
             new_data.tgrid = rebinned_signal['tof']
+
+            # Store rebinned empty data
+            new_data.empty_signal = rebinned_empty_signal
+            new_data.empty_openbeam = rebinned_empty_openbeam
 
         return new_data
