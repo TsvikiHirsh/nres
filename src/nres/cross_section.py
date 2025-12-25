@@ -85,15 +85,43 @@ class CrossSection:
             self.add_material(mat_name, material_data, splitby, total_weight)
 
     def _load_xsdata(self):
-        """Load cross-section data from file."""
-        import trinidi_data
+        """Load cross-section data from file.
+
+        First tries to use trinidi_data package if installed.
+        If not found, downloads xsdata.npy to a local cache directory.
+        Only downloads if the file doesn't already exist in the cache.
+        """
         if self.__xsdata__ is None:
-            data_path = os.path.join(os.path.dirname(trinidi_data.__file__),  "xsdata.npy")
+            # Try to import trinidi_data package
+            try:
+                import trinidi_data
+                data_path = os.path.join(os.path.dirname(trinidi_data.__file__), "xsdata.npy")
+            except ImportError:
+                # trinidi_data not installed, use local cache
+                import platformdirs
+                cache_dir = platformdirs.user_cache_dir("nres", "nres")
+                os.makedirs(cache_dir, exist_ok=True)
+                data_path = os.path.join(cache_dir, "xsdata.npy")
+
+                # Download if file doesn't exist
+                if not os.path.exists(data_path):
+                    import requests
+                    url = 'https://github.com/TsvikiHirsh/trinidi-data/raw/main/trinidi_data/xsdata.npy'
+                    print(f"Downloading cross-section data to {data_path}...")
+                    response = requests.get(url, stream=True)
+                    response.raise_for_status()
+
+                    with open(data_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    print("Download complete!")
+                # else: File already exists, skip download
+
             xsdata = np.load(data_path, allow_pickle=True)[()]
             self.__xsdata__ = {
                 isotope.replace("-",""): pd.Series(
-                    xsdata["cross_sections"][i], 
-                    index=xsdata["energies"][i], 
+                    xsdata["cross_sections"][i],
+                    index=xsdata["energies"][i],
                     name=isotope.replace("-","")
                 )
                 for i, isotope in enumerate(xsdata["isotopes"])
