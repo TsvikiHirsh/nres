@@ -1,13 +1,14 @@
 import unittest
 import numpy as np
-from models import TransmissionModel
+from nres.models import TransmissionModel
 from lmfit import Parameters
 
 # A mock cross-section function for testing
 class MockCrossSection:
     def __init__(self, isotopes):
         self.isotopes = isotopes
-    
+        self.materials = {}  # Required by TransmissionModel
+
     def __call__(self, E):
         # Return a dummy cross-section value that scales with energy
         return sum(self.isotopes.values()) * np.sqrt(E)

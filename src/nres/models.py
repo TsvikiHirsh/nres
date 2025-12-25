@@ -11,14 +11,15 @@ from typing import List, Optional, Union
 
 
 class TransmissionModel(lmfit.Model):
-    def __init__(self, cross_section, 
+    def __init__(self, cross_section,
                         response: str = "expo_gauss",
                         background: str = "polynomial3",
                         tof_calibration: str = "linear",
-                        vary_weights: bool = None, 
-                        vary_background: bool = None, 
+                        vary_weights: bool = None,
+                        vary_background: bool = None,
                         vary_tof: bool = None,
                         vary_response: bool = None,
+                        params: "lmfit.Parameters" = None,
                         **kwargs):
         """
         Initialize the TransmissionModel, a subclass of lmfit.Model.
@@ -41,14 +42,35 @@ class TransmissionModel(lmfit.Model):
             If True, allows the TOF (time-of-flight) parameters (L0, t0) to vary during fitting.
         vary_response : bool, optional
             If True, allows the response parameters to vary during fitting.
+        params : lmfit.Parameters, optional
+            Initial parameter values from a previous fit. Only the parameter values
+            will be updated; vary flags, bounds, and expressions remain as defined by
+            the vary_* arguments. This is useful for using fit results as initial
+            guesses for subsequent fits.
         kwargs : dict, optional
             Additional keyword arguments for model and background parameters.
 
         Notes
         -----
-        This model calculates the transmission function as a combination of 
+        This model calculates the transmission function as a combination of
         cross-section, response function, and background.
+
+        Examples
+        --------
+        Using fit results as initial guesses for a new model:
+
+        >>> # First fit
+        >>> model1 = TransmissionModel(xs, vary_background=True, vary_tof=True)
+        >>> result1 = model1.fit(data1)
+        >>>
+        >>> # Use result1 parameters as initial guesses for a new fit
+        >>> model2 = TransmissionModel(xs, vary_background=True, params=result1.params)
+        >>> result2 = model2.fit(data2)
         """
+        # Extract params from kwargs if provided there (for backward compatibility)
+        if params is None and 'params' in kwargs:
+            params = kwargs.pop('params')
+
         super().__init__(self.transmission, **kwargs)
 
         self.cross_section = CrossSection()
@@ -58,6 +80,12 @@ class TransmissionModel(lmfit.Model):
             splitby=cross_section.materials[material]["splitby"])
 
         self.params = self.make_params()
+
+        # Add minimum bounds to basic parameters to prevent negative values
+        if "thickness" in self.params:
+            self.params["thickness"].set(min=0.)
+        if "norm" in self.params:
+            self.params["norm"].set(min=0.)
         if vary_weights is not None:
             self.params += self._make_weight_params(vary=vary_weights)
         if vary_tof is not None:
@@ -78,8 +106,26 @@ class TransmissionModel(lmfit.Model):
         # set the total atomic weight n [atoms/barn-cm]
         self.n = self.cross_section.n if self.cross_section else 0.01
 
+        # Initialize stages based on vary_* parameters
+        self._stages = {}
+        possible_stages = ["basic", "background", "tof", "response", "weights"]
+        vary_flags = {
+            "basic": True,  # Always include basic parameters
+            "background": vary_background,
+            "tof": vary_tof,
+            "response": vary_response,
+            "weights": vary_weights,
+        }
+        for stage in possible_stages:
+            if vary_flags.get(stage, False) is True:
+                self._stages[stage] = stage
 
-        
+        # Load parameter values from previous fit if provided
+        # This only updates values, not vary flags, bounds, or expressions
+        if params is not None:
+            self._load_param_values(params)
+
+
 
     def transmission(self, E: np.ndarray, thickness: float = 1, norm: float = 1., **kwargs):
         """
@@ -103,11 +149,11 @@ class TransmissionModel(lmfit.Model):
 
         Notes
         -----
-        This function combines the cross-section with the response and background 
+        This function combines the cross-section with the response and background
         models to compute the transmission, which is given by:
 
-        .. math:: T(E) = \text{norm} \cdot e^{- \sigma \cdot \text{thickness} \cdot n} \cdot (1 - \text{bg}) + \text{bg}
-        
+        .. math:: T(E) = \\text{norm} \\cdot e^{- \\sigma \\cdot \\text{thickness} \\cdot n} \\cdot (1 - \\text{bg}) + \\text{bg}
+
         where `sigma` is the cross-section, `bg` is the background function, and `n` is the total atomic weight.
         """
         E = self._tof_correction(E,**kwargs)
@@ -129,8 +175,81 @@ class TransmissionModel(lmfit.Model):
         T = norm * np.exp(- xs * thickness * n) * (1 - bg) + k*bg
         return T
 
+    def _load_param_values(self, source_params: "lmfit.Parameters"):
+        """
+        Load parameter values from a source Parameters object.
+
+        Only updates the values of existing parameters, preserving vary flags,
+        bounds, and expressions as defined during model initialization.
+
+        Parameters
+        ----------
+        source_params : lmfit.Parameters
+            Source parameters (e.g., from a previous fit result) to load values from.
+
+        Notes
+        -----
+        This method is called during __init__ if params argument is provided.
+        It ensures that only parameters that exist in both source and target
+        are updated, and only their values are changed.
+        """
+        for param_name in self.params:
+            if param_name in source_params:
+                # Only update the value, preserve vary, min, max, expr
+                self.params[param_name].value = source_params[param_name].value
+
+    @property
+    def stages(self):
+        """Get the current fitting stages."""
+        return self._stages
+
+    @stages.setter
+    def stages(self, value):
+        """
+        Set the fitting stages.
+
+        Parameters
+        ----------
+        value : str or dict
+            If str, must be "all" to use all vary=True parameters.
+            If dict, keys are stage names, values are stage definitions
+            ("all", a valid group name, or a list of parameters/groups).
+        """
+        import re
+
+        # Define valid group names from group_map
+        group_map = {
+            "basic": ["norm", "thickness"],
+            "background": [p for p in self.params if re.compile(r"(b|bg)\d+").match(p) or p.startswith("b_")],
+            "tof": [p for p in ["L0", "t0", "t1", "t2"] if p in self.params],
+            "response": [p for p in self.params if self.response and p in self.response.params],
+            "weights": [p for p in self.params if re.compile(r"p\d+").match(p)],
+        }
+
+        if isinstance(value, str):
+            if value != "all":
+                raise ValueError("If stages is a string, it must be 'all'")
+            self._stages = {"all": "all"}
+        elif isinstance(value, dict):
+            # Validate stage definitions
+            for stage_name, stage_def in value.items():
+                if not isinstance(stage_name, str):
+                    raise ValueError(f"Stage names must be strings, got {type(stage_name)}")
+                if isinstance(stage_def, str):
+                    if stage_def != "all" and stage_def not in group_map:
+                        raise ValueError(f"Stage definition for '{stage_name}' must be 'all' or a valid group name, got '{stage_def}'")
+                elif isinstance(stage_def, list):
+                    for param in stage_def:
+                        if not isinstance(param, str):
+                            raise ValueError(f"Parameters in stage '{stage_name}' must be strings, got {type(param)}")
+                else:
+                    raise ValueError(f"Stage definition for '{stage_name}' must be 'all', a valid group name, or a list, got {type(stage_def)}")
+            self._stages = value
+        else:
+            raise ValueError(f"Stages must be a string ('all') or dict, got {type(value)}")
+
     def fit(self, data, params=None, emin: float = 0.5e6, emax: float = 20.e6,
-            method: str = "least-squares",
+            method: str = "rietveld",
             xtol: float = None, ftol: float = None, gtol: float = None,
             verbose: bool = False,
             progress_bar: bool = True,
@@ -141,7 +260,7 @@ class TransmissionModel(lmfit.Model):
 
         This method supports both:
         - **Standard single-stage fitting** (default)
-        - **Rietveld-style staged refinement** (`method="rietveld"`) with accumulative parameter refinement
+        - **Rietveld-style staged refinement** (`method="rietveld"`) with accumulative parameter refinement with accumulative parameter refinement
 
         Parameters
         ----------
@@ -155,9 +274,9 @@ class TransmissionModel(lmfit.Model):
             Minimum and maximum energy for fitting (ignored for array-like input and overridden per stage if
             `param_groups` specify `"emin=..."` or `"emax=..."` strings).
         method : str, optional
-            Fitting method.  
-            - `"least-squares"` (default) or any method supported by `lmfit`.
-            - `"rietveld"` will run staged refinement via `_rietveld_fit`.
+            Fitting method.
+            - `"rietveld"` (default) will run staged refinement via `_rietveld_fit`.
+            - `"least-squares"` or any method supported by `lmfit` for single-stage fitting.
         xtol, ftol, gtol : float, optional
             Convergence tolerances (passed to `lmfit`).
         verbose : bool, optional
@@ -182,6 +301,12 @@ class TransmissionModel(lmfit.Model):
             These per-stage overrides temporarily replace the global `emin`/`emax` only during the stage.
         **kwargs
             Additional keyword arguments passed to `lmfit.Model.fit`.
+
+            For grouped data, additional parameters:
+            - `n_jobs` (int): Number of parallel jobs (default: 10). Use -1 for all CPUs,
+              but beware of memory issues. For threading, consider n_jobs=4 or less.
+            - `max_nbytes` (str): Maximum memory per worker (default: '100M'). Prevents
+              memory exhaustion. Increase for complex models or set to None to disable.
 
         Returns
         -------
@@ -214,8 +339,28 @@ class TransmissionModel(lmfit.Model):
         print(result.stages_summary)
         ```
         """
-        # Route to Rietveld if requested
-        if method == "rietveld":
+        # Use self.stages if param_groups not provided
+        if param_groups is None and hasattr(self, 'stages') and self.stages is not None:
+            param_groups = self.stages
+
+        # Check if data is grouped and route to parallel fitting
+        if hasattr(data, 'is_grouped') and data.is_grouped:
+            n_jobs = kwargs.pop('n_jobs', 10)
+            max_nbytes = kwargs.pop('max_nbytes', '100M')
+            return self._fit_grouped(
+                data, params, emin, emax,
+                method=method,
+                xtol=xtol, ftol=ftol, gtol=gtol,
+                verbose=verbose,
+                progress_bar=progress_bar,
+                param_groups=param_groups,
+                n_jobs=n_jobs,
+                max_nbytes=max_nbytes,
+                **kwargs
+            )
+
+        # Route to Rietveld if requested (or if param_groups/stages provided)
+        if method == "rietveld" or param_groups is not None:
             return self._rietveld_fit(
                 data, params, emin, emax,
                 verbose=verbose,
@@ -285,6 +430,8 @@ class TransmissionModel(lmfit.Model):
         self.fit_result = fit_result
         fit_result.plot = self.plot
         fit_result.show_available_params = self.show_available_params
+        fit_result.save = lambda filename, include_model=True: self._save_result(fit_result, filename, include_model)
+        fit_result.save = lambda filename, include_model=True: self._save_result(fit_result, filename, include_model)
 
         if self.response is not None:
             fit_result.response = self.response
@@ -303,7 +450,7 @@ class TransmissionModel(lmfit.Model):
         In this method, parameters accumulate across stages. When a new stage is added,
         all previously refined parameters remain vary=True, allowing for simultaneous
         refinement of all parameters introduced up to that stage.
-
+        
         Parameters
         ----------
         data : pandas.DataFrame or Data
@@ -319,8 +466,12 @@ class TransmissionModel(lmfit.Model):
         progress_bar : bool, optional
             If True, shows a progress bar for each fitting stage.
         param_groups : list, dict, or None, optional - only used for Rietveld fitting
-            Groups of parameters to fit in each stage. Can contain "emin=.." or "emax=.." strings
-            to override energy bounds for that stage.
+            Groups of parameters to fit in each stage. Can contain special keywords:
+            - "emin=<value>" or "emax=<value>": override energy bounds for that stage
+            - "pick-one" or "pick_one": enable pick-one mode for isotope selection. In this mode,
+              the fit tries each cross-section material individually with weight=1 (others at 0),
+              then selects the isotope with the best fit quality (lowest reduced chi-squared).
+              The selected isotope is fixed at weight=1 with all others at weight=0.
         kwargs : dict, optional
             Additional keyword arguments for the fit method, such as weights, method, etc.
 
@@ -345,13 +496,16 @@ class TransmissionModel(lmfit.Model):
             from tqdm.auto import tqdm
         import pickle
 
-        # User-friendly group name mapping
+        # Use original params to determine which were set to vary
+        original_params = params or self.params
+
+        # User-friendly group name mapping - only include parameters that have vary=True
         group_map = {
-            "basic": ["norm", "thickness"],
-            "background": [p for p in self.params if re.compile(r"(b|bg)\d+").match(p) or p.startswith("b_")],
-            "tof": [p for p in ["L0", "t0", "t1", "t2"] if p in self.params],
-            "response": [p for p in self.params if self.response and p in self.response.params],
-            "weights": [p for p in self.params if re.compile(r"p\d+").match(p)],
+            "basic": [p for p in ["norm", "thickness"] if p in original_params and original_params[p].vary],
+            "background": [p for p in original_params if (re.compile(r"(b|bg)\d+").match(p) or p.startswith("b_")) and original_params[p].vary],
+            "tof": [p for p in ["L0", "t0", "t1", "t2"] if p in original_params and original_params[p].vary],
+            "response": [p for p in original_params if self.response and p in self.response.params and original_params[p].vary],
+            "weights": [p for p in original_params if re.compile(r"p\d+").match(p) and original_params[p].vary],
         }
 
         def resolve_single_param_or_group(item):
@@ -401,6 +555,10 @@ class TransmissionModel(lmfit.Model):
                                 print(f"  Override emax detected: {overrides['emax']}")
                         except ValueError:
                             warnings.warn(f"Invalid emax value in group: {item}")
+                    elif item == "pick-one" or item == "pick_one":
+                        overrides['pick_one'] = True
+                        if verbose:
+                            print(f"  Pick-one mode detected: will test each isotope individually")
                     else:
                         params_list.extend(resolve_single_param_or_group(item))
                 elif isinstance(item, list):
@@ -501,6 +659,10 @@ class TransmissionModel(lmfit.Model):
 
         stage_results = []
         stage_summaries = []
+        # Lists to collect final stages (including pick-one isotope tests)
+        final_stage_results = []
+        final_stage_names = []
+        final_resolved_param_groups = []
         cumulative_params = set()  # Track parameters that have been refined (accumulative Rietveld)
 
         def extract_pickleable_attributes(fit_result):
@@ -552,6 +714,166 @@ class TransmissionModel(lmfit.Model):
             else:
                 raise ValueError("Rietveld fitting requires energy-based input data.")
 
+            # Check if pick-one mode is enabled for this stage
+            if overrides.get('pick_one', False):
+                if verbose:
+                    print(f"\n  Pick-one mode: Testing each isotope individually...")
+
+                # Get isotope names from cross-section weights
+                isotope_names = list(self.cross_section.weights.index)
+                isotope_names = [name.replace("-", "") for name in isotope_names]
+
+                # Get the p parameters (free weight parameters)
+                p_params = [p for p in params.keys() if re.compile(r"p\d+").match(p)]
+
+                if len(isotope_names) <= 1:
+                    warnings.warn(f"Pick-one mode requires at least 2 isotopes, but found {len(isotope_names)}. Skipping pick-one.")
+                elif not p_params:
+                    warnings.warn(f"Pick-one mode requires weight parameters (p1, p2, ...), but none found. Skipping pick-one.")
+                else:
+                    # Store results for each isotope test
+                    isotope_results = []
+
+                    # Test each isotope
+                    for iso_idx, isotope_name in enumerate(isotope_names):
+                        if verbose:
+                            print(f"    Testing {isotope_name}...")
+
+                        # Create a copy of params for this test
+                        test_params = deepcopy(params)
+
+                        # Set this isotope to weight=1, others to weight=0
+                        # For isotope i (i < N-1): set p_i = 14 (max), others = -14 (min)
+                        # For isotope N-1 (last): set all p_j = -14 (min)
+                        for j, p_name in enumerate(p_params):
+                            if iso_idx < len(p_params):
+                                # One of the first N-1 isotopes
+                                if j == iso_idx:
+                                    test_params[p_name].value = 14.0  # This isotope dominates
+                                else:
+                                    test_params[p_name].value = -14.0  # Others suppressed
+                            else:
+                                # Last isotope (N-1)
+                                test_params[p_name].value = -14.0  # All p's minimal -> last weight = 1
+
+                        # Set all parameters to not vary (fixed for this test)
+                        for p in test_params.values():
+                            p.vary = False
+
+                        # Vary all cumulative parameters from previous stages (Rietveld methodology)
+                        # This ensures parameters like 'thickness' from earlier stages remain active
+                        for param_name in cumulative_params:
+                            if param_name in test_params and param_name not in p_params:
+                                test_params[param_name].vary = True
+
+                        # Also vary non-weight parameters from current group
+                        non_weight_params = [p for p in group if p not in p_params and not re.compile(r"p\d+").match(p)]
+                        for param_name in non_weight_params:
+                            if param_name in test_params:
+                                test_params[param_name].vary = True
+
+                        # Perform test fit
+                        # Filter out kwargs that lmfit doesn't understand
+                        lmfit_kwargs = {k: v for k, v in kwargs.items()
+                                       if k not in ['n_cores', 'n_jobs', 'max_nbytes', 'progress_bar']}
+                        try:
+                            test_fit = super().fit(
+                                trans,
+                                params=test_params,
+                                E=energies,
+                                weights=weights,
+                                method="leastsq",
+                                **lmfit_kwargs
+                            )
+
+                            isotope_results.append({
+                                'isotope': isotope_name,
+                                'index': iso_idx,
+                                'redchi': test_fit.redchi,
+                                'params': test_fit.params
+                            })
+
+                            if verbose:
+                                print(f"      {isotope_name}: χ²/dof = {test_fit.redchi:.4f}")
+
+                            # Add this isotope test as a separate stage in the final results
+                            final_stage_results.append(test_fit)
+                            final_resolved_param_groups.append(non_weight_params)
+                            final_stage_names.append(f"{stage_name} (test: {isotope_name})")
+
+                        except Exception as e:
+                            warnings.warn(f"Fitting failed for {isotope_name}: {e}")
+                            isotope_results.append({
+                                'isotope': isotope_name,
+                                'index': iso_idx,
+                                'redchi': float('inf'),
+                                'params': None
+                            })
+
+                    # Find the best isotope (lowest reduced chi-squared)
+                    best_result = min(isotope_results, key=lambda x: x['redchi'])
+                    best_isotope = best_result['isotope']
+                    best_idx = best_result['index']
+
+                    if verbose:
+                        print(f"\n  Best fit: {best_isotope} with χ²/dof = {best_result['redchi']:.4f}")
+
+                    # Update progress bar
+                    iterator.set_postfix({"stage": stage_name, "best": best_isotope, "reduced χ²": f"{best_result['redchi']:.4g}"})
+
+                    # Set the weights to fix the best isotope at weight=1
+                    if best_idx < len(p_params):
+                        # One of the first N-1 isotopes
+                        for j, p_name in enumerate(p_params):
+                            if j == best_idx:
+                                params[p_name].value = 14.0
+                            else:
+                                params[p_name].value = -14.0
+                    else:
+                        # Last isotope
+                        for p_name in p_params:
+                            params[p_name].value = -14.0
+
+                    # Copy other fitted parameters from the best result
+                    if best_result['params'] is not None:
+                        non_weight_params = [p for p in group if p not in p_params and not re.compile(r"p\d+").match(p)]
+                        for param_name in non_weight_params:
+                            if param_name in params and param_name in best_result['params']:
+                                params[param_name].value = best_result['params'][param_name].value
+
+                    # The weights are now fixed, so we continue to the next stage
+                    # Add the stage to cumulative params (the non-weight params were fitted)
+                    cumulative_params.update([p for p in group if not re.compile(r"p\d+").match(p)])
+
+                    # Create a fake fit_result for consistency
+                    class PickOneFitResult:
+                        def __init__(self, params, redchi):
+                            self.params = params
+                            self.redchi = redchi
+                            self.success = True
+                            self.residual = None
+                            self.chisqr = None
+                            self.aic = None
+                            self.bic = None
+                            self.nvarys = 0
+                            self.ndata = len(energies)
+                            self.nfev = 0
+                            self.message = f"Pick-one mode: selected {best_isotope}"
+                            self.lmdif_message = self.message
+                            self.cov_x = None
+                            self.method = "pick-one"
+                            self.flatchain = None
+                            self.errorbars = False
+                            self.ci_out = None
+
+                    iterator.set_description(f"Stage {stage_num}/{len(stage_names)}")
+
+                    if verbose:
+                        print(f"  {stage_name} completed with pick-one. Selected {best_isotope}, χ²/dof = {best_result['redchi']:.4f}")
+
+                    # Skip the normal fitting for this stage (isotope tests already added to final lists)
+                    continue
+
             # Accumulate parameters across stages (True Rietveld approach)
             cumulative_params.update(group)
 
@@ -559,6 +881,8 @@ class TransmissionModel(lmfit.Model):
             for p in params.values():
                 p.vary = False
 
+            # Unfreeze current group
+            # Note: group_map already filters out parameters with vary=False
             # Unfreeze all parameters that have been introduced so far
             unfrozen_count = 0
             for name in cumulative_params:
@@ -581,25 +905,39 @@ class TransmissionModel(lmfit.Model):
                 continue
 
             # Perform fitting
+            # Filter out kwargs that lmfit doesn't understand
+            lmfit_kwargs = {k: v for k, v in kwargs.items()
+                           if k not in ['n_cores', 'n_jobs', 'max_nbytes', 'progress_bar']}
             try:
-                fit_result = super().fit(
-                    trans,
-                    params=params,
-                    E=energies,
-                    weights=weights,
-                    method="leastsq",
-                    **kwargs
-                )
+                with warnings.catch_warnings():
+                    if not verbose:
+                        # Suppress lmfit warnings when not verbose
+                        warnings.filterwarnings('ignore', category=UserWarning, module='lmfit')
+
+                    fit_result = super().fit(
+                        trans,
+                        params=params,
+                        E=energies,
+                        weights=weights,
+                        method="leastsq",
+                        **lmfit_kwargs
+                    )
             except Exception as e:
-                warnings.warn(f"Fitting failed in {stage_name}: {e}")
+                if verbose:
+                    warnings.warn(f"Fitting failed in {stage_name}: {e}")
                 continue
 
             # Extract pickleable part
             stripped_result = extract_pickleable_attributes(fit_result)
 
             stage_results.append(stripped_result)
+            # Also add to final results (for stages_summary)
+            final_stage_results.append(stripped_result)
+            final_stage_names.append(stage_name)
+            final_resolved_param_groups.append(group)
 
             # Build summary
+            varied_params = list(cumulative_params)  # Track cumulative parameters
             varied_params = list(cumulative_params)  # Track cumulative parameters
             summary = {
                 "stage": stage_num,
@@ -629,7 +967,12 @@ class TransmissionModel(lmfit.Model):
 
         self.fit_result = fit_result
         self.fit_stages = stage_results
-        self.stages_summary = self._create_stages_summary_table_enhanced(stage_results, resolved_param_groups, stage_names)
+        # Use final lists (which include pick-one isotope tests) for stages_summary
+        self.stages_summary = self._create_stages_summary_table_enhanced(
+            final_stage_results if final_stage_results else stage_results,
+            final_resolved_param_groups if final_resolved_param_groups else resolved_param_groups,
+            final_stage_names if final_stage_names else stage_names
+        )
 
         # Attach plotting methods and other attributes
         fit_result.plot = self.plot
@@ -643,6 +986,7 @@ class TransmissionModel(lmfit.Model):
 
         fit_result.stages_summary = self.stages_summary
         fit_result.show_available_params = self.show_available_params
+        fit_result.save = lambda filename, include_model=True: self._save_result(fit_result, filename, include_model)
         return fit_result
 
 
@@ -761,10 +1105,161 @@ class TransmissionModel(lmfit.Model):
 
         return styler
 
+    def _fit_grouped(self, data, params=None, emin: float = 0.5e6, emax: float = 20.e6,
+                     method: str = "rietveld",
+                     xtol: float = None, ftol: float = None, gtol: float = None,
+                     verbose: bool = False,
+                     progress_bar: bool = True,
+                     param_groups: Optional[List[List[str]]] = None,
+                     n_jobs: int = 10,
+                     max_nbytes: str = '100M',
+                     **kwargs):
+        """
+        Fit model to grouped data in parallel.
+
+        Parameters:
+        -----------
+        data : Data
+            Grouped data object with is_grouped=True.
+        params : lmfit.Parameters, optional
+            Parameters to use for fitting.
+        emin, emax : float
+            Energy range for fitting.
+        method : str
+            Fitting method: "least-squares" or "rietveld".
+        xtol, ftol, gtol : float, optional
+            Convergence tolerances.
+        verbose : bool
+            Show progress for individual fits.
+        progress_bar : bool
+            Show overall progress bar.
+        param_groups : list or dict, optional
+            Fitting stages configuration for rietveld.
+        n_jobs : int
+            Number of parallel jobs (default: 10). Use -1 for all CPUs, but be aware
+            this can cause memory issues with large datasets. For threading backend,
+            consider n_jobs=4 or less for better performance.
+        max_nbytes : str
+            Maximum memory per worker (default: '100M'). Limits memory usage to prevent
+            system freezes. Increase (e.g., '500M') for complex models, or set to None
+            to disable memory limits.
+        **kwargs
+            Additional arguments passed to fit.
+
+        Returns:
+        --------
+        GroupedFitResult
+            Container with fit results for each group.
+        """
+        from joblib import Parallel, delayed
+        from nres.grouped_fit import GroupedFitResult
+        import time
+
+        try:
+            from tqdm.auto import tqdm
+        except ImportError:
+            from tqdm import tqdm
+
+        # Prepare fit arguments
+        fit_kwargs = {
+            'params': params,
+            'emin': emin,
+            'emax': emax,
+            'method': method,
+            'xtol': xtol,
+            'ftol': ftol,
+            'gtol': gtol,
+            'verbose': verbose if verbose else False,
+            'progress_bar': verbose,  # Show individual progress bars when verbose=True
+            'param_groups': param_groups,
+            **kwargs
+        }
+
+        def fit_single_group(idx):
+            """Fit a single group using threading."""
+            from nres.data import Data
+            group_data = Data()
+            group_data.table = data.groups[idx]
+            group_data.L = data.L
+            group_data.tstep = data.tstep
+
+            try:
+                result = self.fit(group_data, **fit_kwargs)
+            except Exception as e:
+                if verbose:
+                    print(f"Error fitting group {idx}: {e}")
+                result = None
+            return idx, result
+
+        start_time = time.time()
+
+        # Execute with threading (or multiprocessing if n_jobs != 1)
+        backend = 'threading' if n_jobs > 0 else 'loky'
+
+        # Warn about performance with high n_jobs in threading mode
+        if backend == 'threading' and n_jobs > 4 and verbose:
+            print(f"Warning: Using {n_jobs} threads. Consider n_jobs=4 or less for better performance.")
+            print(f"         High thread counts can cause memory issues. Current limit: {max_nbytes} per worker.")
+
+        # Execute parallel fitting with proper progress bar
+        if progress_bar:
+            import sys
+            pbar = tqdm(
+                total=len(data.indices),
+                desc=f"Fitting {len(data.indices)} groups",
+                mininterval=0.05,  # Update display every 50ms minimum
+                maxinterval=1.0,   # Force update at least every second
+                smoothing=0.05,    # Less smoothing for more responsive updates
+                file=sys.stderr,   # Write to stderr (unbuffered)
+                dynamic_ncols=True,  # Adjust to terminal width
+                leave=True         # Keep the bar after completion
+            )
+            results = []
+            for result in Parallel(
+                n_jobs=n_jobs,
+                backend=backend,
+                verbose=5 if verbose else 0,
+                return_as='generator',
+                max_nbytes=max_nbytes
+            )(delayed(fit_single_group)(idx) for idx in data.indices):
+                results.append(result)
+                pbar.update(1)
+                # Force immediate display update
+                pbar.refresh()
+                sys.stderr.flush()
+            pbar.close()
+        else:
+            results = Parallel(
+                n_jobs=n_jobs,
+                backend=backend,
+                verbose=5 if verbose else 0,
+                max_nbytes=max_nbytes
+            )(delayed(fit_single_group)(idx) for idx in data.indices)
+
+        elapsed = time.time() - start_time
+        if verbose:
+            print(f"Completed in {elapsed:.2f}s using '{backend}' backend | {elapsed/len(data.indices):.3f}s per fit")
+
+        # Collect results
+        grouped_result = GroupedFitResult(group_shape=data.group_shape)
+        failed_indices = []
+        for idx, result in results:
+            if result is not None:
+                grouped_result.add_result(idx, result)
+            else:
+                failed_indices.append(idx)
+
+        if failed_indices and verbose:
+            import warnings
+            warnings.warn(f"Fitting failed for {len(failed_indices)}/{len(data.indices)} groups. "
+                         f"Failed indices: {failed_indices[:10]}{'...' if len(failed_indices) > 10 else ''}")
+
+        return grouped_result
+
     def show_available_params(self, show_groups=True, show_params=True):
         """
         Display available parameter groups and individual parameters for Rietveld fitting.
-        
+
         Parameters
         ----------
         show_groups : bool, optional
@@ -772,16 +1267,19 @@ class TransmissionModel(lmfit.Model):
         show_params : bool, optional
             If True, show all individual parameters
         """
+        import re
+
         if show_groups:
             print("Available parameter groups:")
             print("=" * 30)
 
+            # Only show parameters that have vary=True
             group_map = {
-                "basic": ["norm", "thickness"],
-                "background": [p for p in self.params if re.compile(r"(b|bg)\d+").match(p) or p.startswith("b_")],
-                "tof": [p for p in ["L0", "t0", "t1", "t2"] if p in self.params],
-                "response": [p for p in self.params if self.response and p in self.response.params],
-                "weights": [p for p in self.params if re.compile(r"p\d+").match(p)],
+                "basic": [p for p in ["norm", "thickness"] if p in self.params and self.params[p].vary],
+                "background": [p for p in self.params if (re.compile(r"(b|bg)\d+").match(p) or p.startswith("b_")) and self.params[p].vary],
+                "tof": [p for p in ["L0", "t0", "t1", "t2"] if p in self.params and self.params[p].vary],
+                "response": [p for p in self.params if self.response and p in self.response.params and self.params[p].vary],
+                "weights": [p for p in self.params if re.compile(r"p\d+").match(p) and self.params[p].vary],
             }
             
             for group_name, params in group_map.items():
@@ -811,7 +1309,7 @@ class TransmissionModel(lmfit.Model):
         print("\n# Mixed approach:")
         print('param_groups = ["basic", ["b0", "ext_l2"], "lattice"]')
 
-    def plot(self, data: "nres.Data" = None, plot_bg: bool = True, correct_tof: bool = True, stage: int = None, **kwargs):
+    def plot(self, data: "nres.Data" = None, plot_bg: bool = True, correct_tof: bool = True, stage: int = None, index=None, **kwargs):
         """
         Plot the results of the fit or model.
 
@@ -824,8 +1322,14 @@ class TransmissionModel(lmfit.Model):
         correct_tof : bool, optional
             Apply TOF correction if L0 and t0 parameters are present, by default True.
         stage: int, optional
-            If provided, plot results from a specific Rietveld fitting stage (1-indexed).    
-            Only works if Rietveld fitting has been performed.    
+            If provided, plot results from a specific Rietveld fitting stage (1-indexed).
+            Only works if Rietveld fitting has been performed.
+        index : int, tuple, or str, optional
+            For grouped data, specify which group to plot.
+            - For 2D grids: can use tuple (0, 0) or string "(0, 0)"
+            - For 1D arrays: can use int 5 or string "5"
+            - For named groups: use string "groupname"
+            If None and data is grouped, raises an error.
         kwargs : dict, optional
             Additional plot settings like color, marker size, etc.
 
@@ -834,6 +1338,27 @@ class TransmissionModel(lmfit.Model):
         matplotlib.axes.Axes
             The axes of the plot.
         """
+        # Handle grouped data
+        if data is not None and hasattr(data, 'is_grouped') and data.is_grouped:
+            if index is None:
+                raise ValueError(
+                    "Data is grouped. Please specify which group to plot using the 'index' parameter.\n"
+                    f"Available indices: {data.indices}"
+                )
+            # Extract the specific group
+            from nres.data import Data
+            normalized_index = data._normalize_index(index)
+            if normalized_index not in data.groups:
+                raise ValueError(f"Index {index} not found. Available indices: {data.indices}")
+
+            # Create a non-grouped Data object for this specific group
+            group_data = Data()
+            group_data.table = data.groups[normalized_index]
+            group_data.L = data.L
+            group_data.tstep = data.tstep
+            group_data.is_grouped = False
+            data = group_data
+
         fig, ax = plt.subplots(2, 1, sharex=True, height_ratios=[3.5, 1], figsize=(6, 5))
         data_object = data.table.dropna().copy() if data else None
 
@@ -1311,15 +1836,18 @@ class TransmissionModel(lmfit.Model):
         # Input validation
         if inputs is None or references is None:
             raise ValueError("Both inputs and references must be provided")
-        
+
+
         # Convert inputs to numpy arrays
         inputs = np.array(inputs, dtype=float)
         references = np.array(references, dtype=float)
-        
+
+
         # Validate input lengths
         if len(inputs) != len(references):
             raise ValueError("Input values and reference values must have the same length")
-        
+
+
         # Convert input values based on input_type
         if input_type == 'energy':
             inputs = utils.energy2time(inputs, self.cross_section.L)
@@ -1327,7 +1855,8 @@ class TransmissionModel(lmfit.Model):
             inputs = inputs * self.cross_section.tstep
         elif input_type != 'tof':
             raise ValueError("Invalid input_type. Must be 'tof', 'energy', or 'slice'")
-        
+
+
         # Convert reference values based on input_type
         if reference_type == 'energy':
             references = utils.energy2time(references, self.cross_section.L)
@@ -1335,23 +1864,666 @@ class TransmissionModel(lmfit.Model):
             references = references * self.cross_section.tstep
         elif reference_type != 'tof':
             raise ValueError("Invalid reference_type. Must be 'tof', 'energy', or 'slice'")
-        
+
+
         # Define the linear model using lmfit
         def linear_tof_correction(x, L0=1., t0=0.):
             return L0 * x + t0
-        
+
+
         # Create the model
         model = lmfit.Model(linear_tof_correction)
         params = model.make_params()
 
         if len(inputs)==1:
             params["L0"].vary = False
-        
+
+
         # Perform the fit
         result = model.fit(inputs, params=params,x=references)
-        
+
+
         # Update self.params with the calibration results
         self.params.set(t0=dict(value=result.params['t0'].value, vary=False))
         self.params.set(L0=dict(value=result.params['L0'].value, vary=False))
-        
+
+
         return result
+
+    def save(self, filename: str):
+        """
+        Save the model to a JSON file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the JSON file where the model will be saved.
+
+        Notes
+        -----
+        The model is saved as JSON, which is portable and human-readable.
+        The saved file can be loaded using the `TransmissionModel.load()` class method.
+
+        Examples
+        --------
+        >>> model = TransmissionModel(cross_section)
+        >>> model.save("my_model.json")
+        >>> loaded_model = TransmissionModel.load("my_model.json")
+        """
+        import json
+
+        # Serialize parameters
+        params_dict = {}
+        for name, param in self.params.items():
+            params_dict[name] = {
+                'value': float(param.value),
+                'vary': bool(param.vary),
+                'min': float(param.min) if param.min is not None else None,
+                'max': float(param.max) if param.max is not None else None,
+                'expr': param.expr,
+            }
+
+        # Serialize cross-section
+        xs_dict = {
+            'name': self.cross_section.name,
+            'materials': self.cross_section.materials,
+            'L': float(self.cross_section.L),
+            'tstep': float(self.cross_section.tstep),
+            'tbins': int(self.cross_section.tbins),
+            'first_tbin': int(self.cross_section.first_tbin),
+        }
+
+        # Serialize response parameters
+        response_dict = None
+        if self.response is not None:
+            response_dict = {
+                'params': {name: {
+                    'value': float(p.value),
+                    'vary': bool(p.vary),
+                    'min': float(p.min) if p.min is not None else None,
+                    'max': float(p.max) if p.max is not None else None,
+                } for name, p in self.response.params.items()},
+                'tstep': float(self.response.tstep),
+                'eps': float(self.response.eps),
+            }
+
+        # Serialize background parameters
+        background_dict = None
+        if self.background is not None:
+            background_dict = {
+                'params': {name: {
+                    'value': float(p.value),
+                    'vary': bool(p.vary),
+                    'min': float(p.min) if p.min is not None else None,
+                    'max': float(p.max) if p.max is not None else None,
+                } for name, p in self.background.params.items()},
+            }
+
+        # Create the model data dictionary
+        model_data = {
+            'version': '1.0',
+            'type': 'TransmissionModel',
+            'cross_section': xs_dict,
+            'response': response_dict,
+            'background': background_dict,
+            'params': params_dict,
+            'n': float(self.n),
+        }
+
+        # Save to JSON file
+        with open(filename, 'w') as f:
+            json.dump(model_data, f, indent=2)
+
+    @classmethod
+    def load(cls, filename: str) -> 'TransmissionModel':
+        """
+        Load a model from a JSON file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the JSON file containing the saved model.
+
+        Returns
+        -------
+        TransmissionModel
+            The loaded model instance.
+
+        Examples
+        --------
+        >>> model = TransmissionModel.load("my_model.json")
+        >>> result = model.fit(data)
+        """
+        import json
+
+        with open(filename, 'r') as f:
+            model_data = json.load(f)
+
+        # Reconstruct cross-section
+        xs_data = model_data['cross_section']
+        xs = CrossSection()
+
+        # Restore cross-section materials
+        for mat_name, mat_info in xs_data['materials'].items():
+            xs.add_material(
+                mat_name,
+                mat_info,
+                splitby=mat_info.get('splitby', 'elements'),
+                total_weight=mat_info.get('total_weight', 1.0)
+            )
+
+        xs.name = xs_data['name']
+        xs.L = xs_data['L']
+        xs.tstep = xs_data['tstep']
+        xs.tbins = xs_data['tbins']
+        xs.first_tbin = xs_data['first_tbin']
+
+        # Determine response and background types from saved params
+        response_kind = None
+        background_kind = None
+
+        if model_data['response'] is not None:
+            # Infer response type from parameters
+            response_kind = "expo_gauss"  # Default, can be enhanced later
+
+        if model_data['background'] is not None:
+            # Infer background type from number of parameters
+            n_bg_params = len(model_data['background']['params'])
+            if n_bg_params == 3:
+                background_kind = "polynomial3"
+            elif n_bg_params == 5:
+                background_kind = "polynomial5"
+
+        # Create model instance
+        model = cls(
+            cross_section=xs,
+            response=response_kind,
+            background=background_kind,
+        )
+
+        # Restore all parameter values
+        for name, param_data in model_data['params'].items():
+            if name in model.params:
+                model.params[name].set(
+                    value=param_data['value'],
+                    vary=param_data['vary'],
+                    min=param_data['min'],
+                    max=param_data['max'],
+                    expr=param_data['expr']
+                )
+
+        # Restore response parameters
+        if model_data['response'] is not None and model.response is not None:
+            for name, param_data in model_data['response']['params'].items():
+                if name in model.response.params:
+                    model.response.params[name].set(
+                        value=param_data['value'],
+                        vary=param_data['vary'],
+                        min=param_data['min'],
+                        max=param_data['max']
+                    )
+
+        # Restore background parameters
+        if model_data['background'] is not None and model.background is not None:
+            for name, param_data in model_data['background']['params'].items():
+                if name in model.background.params:
+                    model.background.params[name].set(
+                        value=param_data['value'],
+                        vary=param_data['vary'],
+                        min=param_data['min'],
+                        max=param_data['max']
+                    )
+
+        model.n = model_data['n']
+
+        return model
+
+    def _save_result(self, result, filename: str, include_model: bool = True):
+        """
+        Save a fit result to a JSON file.
+
+        Parameters
+        ----------
+        result : lmfit.model.ModelResult
+            The fit result to save.
+        filename : str
+            Path to the JSON file where the result will be saved.
+        include_model : bool, optional
+            If True, saves the full model with the result. If False, saves
+            only a compressed result with fit parameters. Default is True.
+        """
+        import json
+        import numpy as np
+
+        # Serialize fit parameters
+        params_dict = {}
+        for name, param in result.params.items():
+            params_dict[name] = {
+                'value': float(param.value),
+                'stderr': float(param.stderr) if param.stderr is not None else None,
+                'vary': bool(param.vary),
+                'min': float(param.min) if param.min is not None else None,
+                'max': float(param.max) if param.max is not None else None,
+                'expr': param.expr,
+            }
+
+        # Serialize fit statistics
+        result_dict = {
+            'version': '1.0',
+            'type': 'FitResult',
+            'params': params_dict,
+            'success': bool(result.success),
+            'chisqr': float(result.chisqr),
+            'redchi': float(result.redchi),
+            'aic': float(result.aic) if hasattr(result, 'aic') else None,
+            'bic': float(result.bic) if hasattr(result, 'bic') else None,
+            'nvarys': int(result.nvarys),
+            'ndata': int(result.ndata),
+            'nfev': int(result.nfev) if hasattr(result, 'nfev') else None,
+            'message': result.message if hasattr(result, 'message') else None,
+        }
+
+        # Optionally include the model
+        if include_model:
+            # Temporarily save model to get its JSON representation
+            import tempfile
+            import os
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_f:
+                temp_filename = temp_f.name
+
+            try:
+                self.save(temp_filename)
+                with open(temp_filename, 'r') as f:
+                    model_dict = json.load(f)
+                result_dict['model'] = model_dict
+            finally:
+                if os.path.exists(temp_filename):
+                    os.remove(temp_filename)
+
+        # Save to JSON file
+        with open(filename, 'w') as f:
+            json.dump(result_dict, f, indent=2)
+
+    @classmethod
+    def load_result(cls, filename: str, model: 'TransmissionModel' = None):
+        """
+        Load a fit result from a JSON file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the JSON file containing the saved result.
+        model : TransmissionModel, optional
+            Model to use for the result. If None and the file contains a model,
+            it will be loaded from the file. If the file doesn't contain a model,
+            this parameter is required.
+
+        Returns
+        -------
+        tuple
+            A tuple containing (model, params_dict) where model is the TransmissionModel
+            instance and params_dict contains the fit parameters and statistics.
+
+        Examples
+        --------
+        >>> model, result_data = TransmissionModel.load_result("my_result.json")
+        >>> print(result_data['redchi'])
+
+        >>> # Or with compressed result
+        >>> model, result_data = TransmissionModel.load_result("result.json", model=my_model)
+        """
+        import json
+        import tempfile
+        import os
+
+        with open(filename, 'r') as f:
+            result_data = json.load(f)
+
+        # Load or use provided model
+        if 'model' in result_data:
+            # Full result with embedded model
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_f:
+                json.dump(result_data['model'], temp_f)
+                temp_filename = temp_f.name
+
+            try:
+                model = cls.load(temp_filename)
+            finally:
+                if os.path.exists(temp_filename):
+                    os.remove(temp_filename)
+        elif model is None:
+            raise ValueError("Model not found in file and no model provided. "
+                           "Either save with include_model=True or provide a model parameter.")
+
+        # Update model parameters with fit results
+        for name, param_data in result_data['params'].items():
+            if name in model.params:
+                model.params[name].set(
+                    value=param_data['value'],
+                    vary=param_data.get('vary', True),
+                    min=param_data.get('min'),
+                    max=param_data.get('max'),
+                    expr=param_data.get('expr')
+                )
+
+        # Return model and result dictionary
+        return model, result_data
+
+    def save(self, filename: str):
+        """
+        Save the model to a JSON file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the JSON file where the model will be saved.
+
+        Notes
+        -----
+        The model is saved as JSON, which is portable and human-readable.
+        The saved file can be loaded using the `TransmissionModel.load()` class method.
+
+        Examples
+        --------
+        >>> model = TransmissionModel(cross_section)
+        >>> model.save("my_model.json")
+        >>> loaded_model = TransmissionModel.load("my_model.json")
+        """
+        import json
+
+        # Serialize parameters
+        params_dict = {}
+        for name, param in self.params.items():
+            params_dict[name] = {
+                'value': float(param.value),
+                'vary': bool(param.vary),
+                'min': float(param.min) if param.min is not None else None,
+                'max': float(param.max) if param.max is not None else None,
+                'expr': param.expr,
+            }
+
+        # Serialize cross-section
+        xs_dict = {
+            'name': self.cross_section.name,
+            'materials': self.cross_section.materials,
+            'L': float(self.cross_section.L),
+            'tstep': float(self.cross_section.tstep),
+            'tbins': int(self.cross_section.tbins),
+            'first_tbin': int(self.cross_section.first_tbin),
+        }
+
+        # Serialize response parameters
+        response_dict = None
+        if self.response is not None:
+            response_dict = {
+                'params': {name: {
+                    'value': float(p.value),
+                    'vary': bool(p.vary),
+                    'min': float(p.min) if p.min is not None else None,
+                    'max': float(p.max) if p.max is not None else None,
+                } for name, p in self.response.params.items()},
+                'tstep': float(self.response.tstep),
+                'eps': float(self.response.eps),
+            }
+
+        # Serialize background parameters
+        background_dict = None
+        if self.background is not None:
+            background_dict = {
+                'params': {name: {
+                    'value': float(p.value),
+                    'vary': bool(p.vary),
+                    'min': float(p.min) if p.min is not None else None,
+                    'max': float(p.max) if p.max is not None else None,
+                } for name, p in self.background.params.items()},
+            }
+
+        # Create the model data dictionary
+        model_data = {
+            'version': '1.0',
+            'type': 'TransmissionModel',
+            'cross_section': xs_dict,
+            'response': response_dict,
+            'background': background_dict,
+            'params': params_dict,
+            'n': float(self.n),
+        }
+
+        # Save to JSON file
+        with open(filename, 'w') as f:
+            json.dump(model_data, f, indent=2)
+
+    @classmethod
+    def load(cls, filename: str) -> 'TransmissionModel':
+        """
+        Load a model from a JSON file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the JSON file containing the saved model.
+
+        Returns
+        -------
+        TransmissionModel
+            The loaded model instance.
+
+        Examples
+        --------
+        >>> model = TransmissionModel.load("my_model.json")
+        >>> result = model.fit(data)
+        """
+        import json
+
+        with open(filename, 'r') as f:
+            model_data = json.load(f)
+
+        # Reconstruct cross-section
+        xs_data = model_data['cross_section']
+        xs = CrossSection()
+
+        # Restore cross-section materials
+        for mat_name, mat_info in xs_data['materials'].items():
+            xs.add_material(
+                mat_name,
+                mat_info,
+                splitby=mat_info.get('splitby', 'elements'),
+                total_weight=mat_info.get('total_weight', 1.0)
+            )
+
+        xs.name = xs_data['name']
+        xs.L = xs_data['L']
+        xs.tstep = xs_data['tstep']
+        xs.tbins = xs_data['tbins']
+        xs.first_tbin = xs_data['first_tbin']
+
+        # Determine response and background types from saved params
+        response_kind = None
+        background_kind = None
+
+        if model_data['response'] is not None:
+            # Infer response type from parameters
+            response_kind = "expo_gauss"  # Default, can be enhanced later
+
+        if model_data['background'] is not None:
+            # Infer background type from number of parameters
+            n_bg_params = len(model_data['background']['params'])
+            if n_bg_params == 3:
+                background_kind = "polynomial3"
+            elif n_bg_params == 5:
+                background_kind = "polynomial5"
+
+        # Create model instance
+        model = cls(
+            cross_section=xs,
+            response=response_kind,
+            background=background_kind,
+        )
+
+        # Restore all parameter values
+        for name, param_data in model_data['params'].items():
+            if name in model.params:
+                model.params[name].set(
+                    value=param_data['value'],
+                    vary=param_data['vary'],
+                    min=param_data['min'],
+                    max=param_data['max'],
+                    expr=param_data['expr']
+                )
+
+        # Restore response parameters
+        if model_data['response'] is not None and model.response is not None:
+            for name, param_data in model_data['response']['params'].items():
+                if name in model.response.params:
+                    model.response.params[name].set(
+                        value=param_data['value'],
+                        vary=param_data['vary'],
+                        min=param_data['min'],
+                        max=param_data['max']
+                    )
+
+        # Restore background parameters
+        if model_data['background'] is not None and model.background is not None:
+            for name, param_data in model_data['background']['params'].items():
+                if name in model.background.params:
+                    model.background.params[name].set(
+                        value=param_data['value'],
+                        vary=param_data['vary'],
+                        min=param_data['min'],
+                        max=param_data['max']
+                    )
+
+        model.n = model_data['n']
+
+        return model
+
+    def _save_result(self, result, filename: str, include_model: bool = True):
+        """
+        Save a fit result to a JSON file.
+
+        Parameters
+        ----------
+        result : lmfit.model.ModelResult
+            The fit result to save.
+        filename : str
+            Path to the JSON file where the result will be saved.
+        include_model : bool, optional
+            If True, saves the full model with the result. If False, saves
+            only a compressed result with fit parameters. Default is True.
+        """
+        import json
+        import numpy as np
+
+        # Serialize fit parameters
+        params_dict = {}
+        for name, param in result.params.items():
+            params_dict[name] = {
+                'value': float(param.value),
+                'stderr': float(param.stderr) if param.stderr is not None else None,
+                'vary': bool(param.vary),
+                'min': float(param.min) if param.min is not None else None,
+                'max': float(param.max) if param.max is not None else None,
+                'expr': param.expr,
+            }
+
+        # Serialize fit statistics
+        result_dict = {
+            'version': '1.0',
+            'type': 'FitResult',
+            'params': params_dict,
+            'success': bool(result.success),
+            'chisqr': float(result.chisqr),
+            'redchi': float(result.redchi),
+            'aic': float(result.aic) if hasattr(result, 'aic') else None,
+            'bic': float(result.bic) if hasattr(result, 'bic') else None,
+            'nvarys': int(result.nvarys),
+            'ndata': int(result.ndata),
+            'nfev': int(result.nfev) if hasattr(result, 'nfev') else None,
+            'message': result.message if hasattr(result, 'message') else None,
+        }
+
+        # Optionally include the model
+        if include_model:
+            # Temporarily save model to get its JSON representation
+            import tempfile
+            import os
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_f:
+                temp_filename = temp_f.name
+
+            try:
+                self.save(temp_filename)
+                with open(temp_filename, 'r') as f:
+                    model_dict = json.load(f)
+                result_dict['model'] = model_dict
+            finally:
+                if os.path.exists(temp_filename):
+                    os.remove(temp_filename)
+
+        # Save to JSON file
+        with open(filename, 'w') as f:
+            json.dump(result_dict, f, indent=2)
+
+    @classmethod
+    def load_result(cls, filename: str, model: 'TransmissionModel' = None):
+        """
+        Load a fit result from a JSON file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the JSON file containing the saved result.
+        model : TransmissionModel, optional
+            Model to use for the result. If None and the file contains a model,
+            it will be loaded from the file. If the file doesn't contain a model,
+            this parameter is required.
+
+        Returns
+        -------
+        tuple
+            A tuple containing (model, params_dict) where model is the TransmissionModel
+            instance and params_dict contains the fit parameters and statistics.
+
+        Examples
+        --------
+        >>> model, result_data = TransmissionModel.load_result("my_result.json")
+        >>> print(result_data['redchi'])
+
+        >>> # Or with compressed result
+        >>> model, result_data = TransmissionModel.load_result("result.json", model=my_model)
+        """
+        import json
+        import tempfile
+        import os
+
+        with open(filename, 'r') as f:
+            result_data = json.load(f)
+
+        # Load or use provided model
+        if 'model' in result_data:
+            # Full result with embedded model
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_f:
+                json.dump(result_data['model'], temp_f)
+                temp_filename = temp_f.name
+
+            try:
+                model = cls.load(temp_filename)
+            finally:
+                if os.path.exists(temp_filename):
+                    os.remove(temp_filename)
+        elif model is None:
+            raise ValueError("Model not found in file and no model provided. "
+                           "Either save with include_model=True or provide a model parameter.")
+
+        # Update model parameters with fit results
+        for name, param_data in result_data['params'].items():
+            if name in model.params:
+                model.params[name].set(
+                    value=param_data['value'],
+                    vary=param_data.get('vary', True),
+                    min=param_data.get('min'),
+                    max=param_data.get('max'),
+                    expr=param_data.get('expr')
+                )
+
+        # Return model and result dictionary
+        return model, result_data

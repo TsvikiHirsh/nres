@@ -36,6 +36,7 @@ dependencies = [
   "setuptools",
   "tqdm",
   "mendeleev",
+  "joblib",
   "platformdirs",
 ]
 
