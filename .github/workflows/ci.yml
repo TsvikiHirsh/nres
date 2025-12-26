@@ -130,38 +130,43 @@ jobs:
           python -c "
           import nres
           import numpy as np
-          import pandas as pd
+          import tempfile
+          import os
 
-          # Create test data
-          tof = np.arange(1, 1001)
-          signal_counts = np.random.poisson(200, 1000).astype(float)
-          openbeam_counts = np.random.poisson(400, 1000).astype(float)
+          # Create temporary files for testing
+          tmpdir = tempfile.mkdtemp()
 
-          signal_df = pd.DataFrame({
-              'tof': tof,
-              'counts': signal_counts,
-              'err': np.sqrt(signal_counts)
-          })
+          tof = np.arange(1, 1001, dtype=float)
+          signal_counts = np.random.poisson(200, 1000)
+          openbeam_counts = np.random.poisson(400, 1000)
 
-          openbeam_df = pd.DataFrame({
-              'tof': tof,
-              'counts': openbeam_counts,
-              'err': np.sqrt(openbeam_counts)
-          })
+          signal_file = os.path.join(tmpdir, 'signal.csv')
+          openbeam_file = os.path.join(tmpdir, 'openbeam.csv')
 
-          data = nres.Data()
-          data.signal = signal_df
-          data.openbeam = openbeam_df
-          data.L = 10.0
-          data.tstep = 1e-6
-          data.table = pd.DataFrame({
-              'energy': tof,
-              'trans': signal_counts / openbeam_counts,
-              'err': 0.01 * np.ones_like(tof)
-          })
+          # Write CSV files
+          with open(signal_file, 'w') as f:
+              f.write('tof,counts,err\n')
+              for t, c in zip(tof, signal_counts):
+                  f.write(f'{t},{c},{np.sqrt(c)}\n')
+
+          with open(openbeam_file, 'w') as f:
+              f.write('tof,counts,err\n')
+              for t, c in zip(tof, openbeam_counts):
+                  f.write(f'{t},{c},{np.sqrt(c)}\n')
+
+          # Load data properly using from_counts
+          data = nres.Data.from_counts(
+              signal_file, openbeam_file,
+              L=10.0, tstep=1e-6, verbosity=0
+          )
 
           # Test rebinning
           rebinned = data.rebin(n=2)
           print(f'✓ Rebinned from {len(data.table)} to {len(rebinned.table)} bins')
+
+          # Cleanup
+          import shutil
+          shutil.rmtree(tmpdir)
+
           print('Rebinning feature working!')
           "
