@@ -378,6 +378,105 @@ class Data:
         return self_data
 
     @classmethod
+    def from_grouped_arrays(cls, tof, trans, err, L: float, tstep: float,
+                            L0: float = 1.0, t0: float = 0.0, indices: list = None):
+        """
+        Creates a Data object from grouped transmission arrays.
+
+        This method is useful for creating grouped data from numpy arrays,
+        such as data from imaging detectors or multi-sample measurements.
+
+        Parameters:
+        -----------
+        tof : array-like
+            Time-of-flight bins (1D array).
+        trans : array-like
+            Transmission values. Shape: (n_groups, n_energy_bins)
+        err : array-like
+            Transmission uncertainties. Shape: (n_groups, n_energy_bins)
+        L : float
+            Flight path length in meters.
+        tstep : float
+            Time step in seconds for TOF to energy conversion.
+        L0 : float, optional
+            Flight path scale factor. Default is 1.0.
+        t0 : float, optional
+            Time offset in seconds. Default is 0.0.
+        indices : list, optional
+            List of group indices. Can be:
+            - List of ints for 1D array: [0, 1, 2, ...]
+            - List of tuples for 2D grid: [(0,0), (0,1), (1,0), ...]
+            - List of strings for named groups: ['sample1', 'sample2', ...]
+            If not provided, will use sequential integers.
+
+        Returns:
+        --------
+        Data
+            A Data object with grouped data.
+
+        Examples:
+        ---------
+        >>> # Create grouped data for 10 pixels with 100 energy bins each
+        >>> tof = np.arange(1, 101)
+        >>> trans_2d = np.random.rand(10, 100)
+        >>> err_2d = trans_2d * 0.05
+        >>> data = Data.from_grouped_arrays(tof, trans_2d, err_2d, L=10.0, tstep=1e-6)
+        """
+        tof = np.asarray(tof)
+        trans = np.asarray(trans)
+        err = np.asarray(err)
+
+        # Validate shapes
+        if trans.ndim != 2 or err.ndim != 2:
+            raise ValueError("trans and err must be 2D arrays (n_groups, n_energy_bins)")
+        if trans.shape != err.shape:
+            raise ValueError(f"Shape mismatch: trans {trans.shape} vs err {err.shape}")
+        if len(tof) != trans.shape[1]:
+            raise ValueError(f"TOF length {len(tof)} doesn't match trans shape {trans.shape}")
+
+        n_groups, n_energy = trans.shape
+
+        # Create indices if not provided
+        if indices is None:
+            indices = list(range(n_groups))
+        elif len(indices) != n_groups:
+            raise ValueError(f"Number of indices ({len(indices)}) doesn't match number of groups ({n_groups})")
+
+        # Determine group shape
+        group_shape = cls._determine_group_shape(indices)
+
+        # Create Data object
+        self_data = cls()
+        self_data.L = L
+        self_data.tstep = tstep
+        self_data.L0 = L0
+        self_data.t0 = t0
+        self_data.is_grouped = True
+        self_data.indices = indices
+        self_data.group_shape = group_shape
+        self_data.grouped_trans = trans
+        self_data.grouped_err = err
+
+        # Convert TOF to energy
+        energy = utils.time2energy(tof * tstep, L)
+
+        # Create groups dictionary
+        self_data.groups = {}
+        for i, idx in enumerate(indices):
+            table = pd.DataFrame({
+                'energy': energy,
+                'trans': trans[i, :],
+                'err': err[i, :]
+            })
+            table.attrs['label'] = str(idx)
+            self_data.groups[idx] = table
+
+        # Set main table to first group
+        self_data.table = self_data.groups[indices[0]]
+
+        return self_data
+
+    @classmethod
     def from_grouped(cls, signal, openbeam,
                      empty_signal: str = "", empty_openbeam: str = "",
                      tstep: float = 1.56255e-9, L: float = 10.59,
@@ -1153,16 +1252,106 @@ class Data:
             new_data.indices = self.indices
             new_data.group_shape = self.group_shape
 
-            # We need to rebin the original signal and openbeam for each group
-            # Since we don't store them in grouped data, we need to recreate them
-            # Actually, for grouped data we need the original files or we can't rebin properly
-            # For now, let's raise an error for grouped data
-            # TODO: In the future, store signal/openbeam for each group if we want rebinning
-            raise NotImplementedError(
-                "Rebinning of grouped data is not yet implemented. "
-                "To rebin grouped data, apply rebinning when loading with from_grouped() "
-                "or modify the original files."
-            )
+            # For grouped data, we rebin the transmission tables directly
+            # This is done by interpolating onto a new energy grid
+            def rebin_transmission_table(table_df, n_bins=None, new_tstep_val=None, old_tstep_val=None, L_val=None):
+                """
+                Rebin a transmission table (energy, trans, err) for grouped data.
+
+                Uses interpolation to map transmission values onto a new energy grid.
+                Note: Uncertainties are interpolated, which is approximate. For best
+                accuracy, rebin the original counts data before creating grouped data.
+                """
+                if n_bins is not None:
+                    # Simple binning: combine every n_bins
+                    if n_bins == 1:
+                        return table_df.copy()
+
+                    n_original = len(table_df)
+                    n_new = n_original // n_bins
+
+                    # Truncate to make evenly divisible
+                    table_truncated = table_df.iloc[:n_new * n_bins].copy()
+
+                    # Reshape and average (for transmission, we average not sum)
+                    energy_reshaped = table_truncated['energy'].values.reshape(n_new, n_bins)
+                    trans_reshaped = table_truncated['trans'].values.reshape(n_new, n_bins)
+                    err_reshaped = table_truncated['err'].values.reshape(n_new, n_bins)
+
+                    # Use arithmetic mean for energy (centers of rebinned energy bins)
+                    new_energy = energy_reshaped.mean(axis=1)
+                    # Use arithmetic mean for transmission
+                    new_trans = trans_reshaped.mean(axis=1)
+                    # Combine errors: err_mean = sqrt(sum(err^2)) / n
+                    new_err = np.sqrt((err_reshaped**2).sum(axis=1)) / n_bins
+
+                    rebinned_table = pd.DataFrame({
+                        'energy': new_energy,
+                        'trans': new_trans,
+                        'err': new_err
+                    })
+
+                else:
+                    # Interpolation method: new tstep
+                    from scipy.interpolate import interp1d
+
+                    # Current energy grid
+                    old_energy = table_df['energy'].values
+
+                    # Create new energy grid based on new tstep
+                    # Convert energy back to TOF, apply new tstep, convert back
+                    old_tof_time = utils.energy2time(old_energy, L_val)
+                    tof_min = old_tof_time.min()
+                    tof_max = old_tof_time.max()
+                    n_new_bins = int((tof_max - tof_min) / new_tstep_val)
+                    new_tof_time = np.linspace(tof_min, tof_max, n_new_bins)
+                    new_energy = utils.time2energy(new_tof_time, L_val)
+
+                    # Interpolate transmission and error
+                    trans_interp = interp1d(old_energy, table_df['trans'].values,
+                                           kind='linear', fill_value='extrapolate', bounds_error=False)
+                    err_interp = interp1d(old_energy, table_df['err'].values,
+                                         kind='linear', fill_value='extrapolate', bounds_error=False)
+
+                    new_trans = trans_interp(new_energy)
+                    new_err = err_interp(new_energy)
+
+                    rebinned_table = pd.DataFrame({
+                        'energy': new_energy,
+                        'trans': new_trans,
+                        'err': new_err
+                    })
+
+                # Preserve label if present
+                if hasattr(table_df, 'attrs') and 'label' in table_df.attrs:
+                    rebinned_table.attrs['label'] = table_df.attrs['label']
+
+                return rebinned_table
+
+            # Rebin each group
+            for idx in self.indices:
+                group_table = self.groups[idx]
+                rebinned_table = rebin_transmission_table(
+                    group_table, n_bins=n, new_tstep_val=tstep,
+                    old_tstep_val=self.tstep, L_val=self.L
+                )
+                new_data.groups[idx] = rebinned_table
+
+            # Update the main table to be the first group
+            new_data.table = new_data.groups[self.indices[0]]
+
+            # Also update grouped_trans and grouped_err arrays
+            n_groups = len(self.indices)
+            n_energy = len(new_data.groups[self.indices[0]])
+            new_trans_array = np.zeros((n_groups, n_energy))
+            new_err_array = np.zeros((n_groups, n_energy))
+
+            for i, idx in enumerate(self.indices):
+                new_trans_array[i, :] = new_data.groups[idx]['trans'].values
+                new_err_array[i, :] = new_data.groups[idx]['err'].values
+
+            new_data.grouped_trans = new_trans_array
+            new_data.grouped_err = new_err_array
 
         else:
             # Rebin non-grouped data
