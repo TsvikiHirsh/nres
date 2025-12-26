@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - master
   release:
     types:
       - published
@@ -47,6 +48,3 @@ jobs:
 
       - uses: pypa/gh-action-pypi-publish@release/v1
         if: github.event_name == 'release' && github.event.action == 'published'
-        with:
-          # Remove this line to publish to PyPI
-          repository-url: https://test.pypi.org/legacy/

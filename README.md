@@ -4,11 +4,10 @@
   <img src="docs/source/_static/nres_logo.png" alt="nres logo" width="200"/>
 </p>
 
-
+[![CI Status][actions-badge]][actions-link]
 [![Documentation Status](https://readthedocs.org/projects/nres/badge/?version=latest)](https://nres.readthedocs.io/en/latest/?badge=latest)
-<!-- [![PyPI version][pypi-version]][pypi-link]
-[![PyPI platforms][pypi-platforms]][pypi-link] -->
-
+[![PyPI version][pypi-version]][pypi-link]
+[![PyPI platforms][pypi-platforms]][pypi-link]
 
 Simple yet powerful package for fitting neutron resonances.
 
@@ -16,6 +15,7 @@ Simple yet powerful package for fitting neutron resonances.
 
 ## Features
 
+### Core Capabilities
 - Flexible and simple way to generate and combine cross-sections from different isotopic materials
 - Built-in database of many useful materials and elements
 - Cross-sections taken from ENDF8.0
@@ -25,13 +25,30 @@ Simple yet powerful package for fitting neutron resonances.
 - Plotting utilities for concise result visualization
 - Fast cross-section integration and convolution with response function using C++ core code
 
+### New in v0.4.0 🎉
+- **Grouped Data Support**: Fit imaging detector data and multi-sample measurements with parallel processing
+- **Advanced Rebinning**: Combine time-of-flight bins with automatic energy calibration preservation
+- **Save/Load Functionality**: Serialize models and fit results to JSON for reproducible analysis
+- **Enhanced Visualization**: Transmission maps, multi-parameter plots, and interactive HTML reports
+- **Memory Management**: Efficient parallel fitting with automatic memory optimization
+
 ## Installation
 
-From source:
+### From PyPI (recommended)
+```bash
+pip install nres
+```
+
+### From source
 ```bash
 git clone https://github.com/TsvikiHirsh/nres
 cd nres
 pip install .
+```
+
+For development:
+```bash
+pip install -e ".[dev]"
 ```
 
 
@@ -78,7 +95,7 @@ For questions, issues, or contributions, please visit the [GitHub repository](ht
 <!-- prettier-ignore-start -->
 [actions-badge]:            https://github.com/TsvikiHirsh/nres/workflows/CI/badge.svg
 [actions-link]:             https://github.com/TsvikiHirsh/nres/actions
-<!-- [pypi-link]:                https://pypi.org/project/nres/
+[pypi-link]:                https://pypi.org/project/nres/
 [pypi-platforms]:           https://img.shields.io/pypi/pyversions/nres
-[pypi-version]:             https://img.shields.io/pypi/v/nres -->
+[pypi-version]:             https://img.shields.io/pypi/v/nres
 <!-- prettier-ignore-end -->
