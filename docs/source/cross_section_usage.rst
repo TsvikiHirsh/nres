@@ -16,7 +16,7 @@ You can create a ``CrossSection`` object by providing isotope names and associat
     import nres
     # Create a CrossSection for Carbon, Hydrogen and Iron isotopic mixture
     xs = nres.CrossSection({"C12":0.3,"H1":0.1,"Fe56":0.6})
-    
+
     # View the weights of the mixture
     print(xs.weights)
 
@@ -90,7 +90,7 @@ You can combine different materials using the ``__add__`` method:
     # Combine iron and nickel
     iron_xs = nres.CrossSection("Fe")
     iron_nickel_xs = iron_xs + nres.CrossSection("Ni")
-    
+
     # View the weights of the combined material
     print(iron_nickel_xs.weights)
 
@@ -176,7 +176,7 @@ Output:
 .. code-block:: text
 
                    C         Mn          P          S         Si         Cr         Ni         Fe     total
-    energy                                                                                                  
+    energy
     1.000000e-05  0.003148  0.113892  0.000563  0.000405  0.003176  0.602253  0.470814  3.305265  4.499516
     1.000990e-05  0.003148  0.113870  0.000562  0.000405  0.003176  0.602137  0.470726  3.304605  4.498629
     1.001981e-05  0.003148  0.113847  0.000562  0.000405  0.003175  0.602021  0.470638  3.303945  4.497741

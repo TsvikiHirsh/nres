@@ -1,16 +1,15 @@
-from setuptools import setup, Extension, find_packages
+from __future__ import annotations
+
 import pybind11
+from setuptools import Extension, find_packages, setup
 
 # Define the extension module
 ext_modules = [
     Extension(
         "nres._integrate_xs",
         sources=["src/bindings.cpp", "src/integrate_xs.cpp"],
-        include_dirs=[
-            pybind11.get_include(),
-            "include"
-        ],
-        extra_compile_args=["-std=c++17"]  # Add C++17 requirement
+        include_dirs=[pybind11.get_include(), "include"],
+        extra_compile_args=["-std=c++17"],  # Add C++17 requirement
     )
 ]
 
@@ -31,5 +30,3 @@ setup(
     ext_modules=ext_modules,
     zip_safe=False,
 )
-
-

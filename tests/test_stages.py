@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import unittest
+
 import numpy as np
 import pandas as pd
-from nres.models import TransmissionModel
-from nres.cross_section import CrossSection
+
 from nres import materials
+from nres.cross_section import CrossSection
+from nres.models import TransmissionModel
 
 
 class TestStages(unittest.TestCase):
@@ -17,7 +21,9 @@ class TestStages(unittest.TestCase):
     def test_stages_initialized_correctly(self):
         """Test that _stages is initialized based on vary_* parameters"""
         # Model with all vary flags set to True
-        model = TransmissionModel(self.xs, vary_background=True, vary_response=True, vary_tof=True)
+        model = TransmissionModel(
+            self.xs, vary_background=True, vary_response=True, vary_tof=True
+        )
 
         # Check that stages includes the expected groups
         self.assertIn("basic", model.stages)
@@ -53,7 +59,7 @@ class TestStages(unittest.TestCase):
         custom_stages = {
             "Stage 1": ["norm", "thickness"],
             "Stage 2": "background",
-            "Stage 3": ["b0", "b1"]
+            "Stage 3": ["b0", "b1"],
         }
         model.stages = custom_stages
 
@@ -113,22 +119,22 @@ class TestStages(unittest.TestCase):
         trans_data = true_trans + noise
         err_data = np.full_like(trans_data, 0.01)
 
-        data = pd.DataFrame({
-            'energy': energy,
-            'trans': trans_data,
-            'err': err_data
-        })
+        data = pd.DataFrame({"energy": energy, "trans": trans_data, "err": err_data})
 
         # Fit with rietveld method
         model = TransmissionModel(self.xs, vary_background=True, vary_response=False)
-        result = model.fit(data, method="rietveld", emin=1e5, emax=1e7, progress_bar=False)
+        result = model.fit(
+            data, method="rietveld", emin=1e5, emax=1e7, progress_bar=False
+        )
 
         # Check that stages_summary exists
-        self.assertTrue(hasattr(model, 'stages_summary'))
-        self.assertTrue(hasattr(result, 'stages_summary'))
+        self.assertTrue(hasattr(model, "stages_summary"))
+        self.assertTrue(hasattr(result, "stages_summary"))
 
         # Check that it's a DataFrame
-        self.assertIsInstance(model.stages_summary, (pd.DataFrame, pd.io.formats.style.Styler))
+        self.assertIsInstance(
+            model.stages_summary, (pd.DataFrame, pd.io.formats.style.Styler)
+        )
 
     def test_get_stages_summary_table_method(self):
         """Test the get_stages_summary_table method"""
@@ -141,15 +147,13 @@ class TestStages(unittest.TestCase):
         trans_data = true_trans + noise
         err_data = np.full_like(trans_data, 0.01)
 
-        data = pd.DataFrame({
-            'energy': energy,
-            'trans': trans_data,
-            'err': err_data
-        })
+        data = pd.DataFrame({"energy": energy, "trans": trans_data, "err": err_data})
 
         # Fit with rietveld method
         model = TransmissionModel(self.xs, vary_background=True, vary_response=False)
-        result = model.fit(data, method="rietveld", emin=1e5, emax=1e7, progress_bar=False)
+        result = model.fit(
+            data, method="rietveld", emin=1e5, emax=1e7, progress_bar=False
+        )
 
         # Get summary table
         summary = model.get_stages_summary_table()

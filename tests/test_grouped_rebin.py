@@ -5,9 +5,12 @@ This module tests the rebinning functionality for grouped data,
 including both n-binning and tstep-based rebinning.
 """
 
-import pytest
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
+import pytest
+
 from nres import Data, utils
 
 
@@ -33,11 +36,7 @@ class TestGroupedDataRebin:
 
         # Create grouped data
         data = Data.from_grouped_arrays(
-            tof=tof,
-            trans=trans_2d,
-            err=err_2d,
-            L=L,
-            tstep=tstep
+            tof=tof, trans=trans_2d, err=err_2d, L=L, tstep=tstep
         )
 
         # Rebin with n=4
@@ -65,7 +64,10 @@ class TestGroupedDataRebin:
             assert np.all(rebinned.grouped_trans[i, :] >= 0)
             assert np.all(rebinned.grouped_trans[i, :] <= 1)
             # Should be close to original average
-            assert np.abs(rebinned.grouped_trans[i, :].mean() - trans_2d[i, :].mean()) < 0.1
+            assert (
+                np.abs(rebinned.grouped_trans[i, :].mean() - trans_2d[i, :].mean())
+                < 0.1
+            )
 
     def test_grouped_rebin_with_tstep(self):
         """Test rebinning grouped data using tstep parameter."""
@@ -80,11 +82,7 @@ class TestGroupedDataRebin:
         err_2d = np.ones((n_groups, len(tof))) * 0.02
 
         data = Data.from_grouped_arrays(
-            tof=tof,
-            trans=trans_2d,
-            err=err_2d,
-            L=L,
-            tstep=tstep
+            tof=tof, trans=trans_2d, err=err_2d, L=L, tstep=tstep
         )
 
         # Rebin with new tstep (2x original)
@@ -114,12 +112,7 @@ class TestGroupedDataRebin:
         indices_2d = [(i, j) for i in range(5) for j in range(2)]
 
         data = Data.from_grouped_arrays(
-            tof=tof,
-            trans=trans_2d,
-            err=err_2d,
-            L=10.0,
-            tstep=1e-6,
-            indices=indices_2d
+            tof=tof, trans=trans_2d, err=err_2d, L=10.0, tstep=1e-6, indices=indices_2d
         )
 
         # Rebin
@@ -143,26 +136,22 @@ class TestGroupedDataRebin:
         err_2d = np.ones((3, len(tof))) * 0.02
 
         data = Data.from_grouped_arrays(
-            tof=tof,
-            trans=trans_2d,
-            err=err_2d,
-            L=L,
-            tstep=tstep
+            tof=tof, trans=trans_2d, err=err_2d, L=L, tstep=tstep
         )
 
         # Get original energy range
-        orig_energy_min = data.table['energy'].min()
-        orig_energy_max = data.table['energy'].max()
+        orig_energy_min = data.table["energy"].min()
+        orig_energy_max = data.table["energy"].max()
 
         # Rebin
         rebinned = data.rebin(n=5)
 
         # Energy range should be positive
-        assert rebinned.table['energy'].min() > 0
-        assert rebinned.table['energy'].max() > rebinned.table['energy'].min()
+        assert rebinned.table["energy"].min() > 0
+        assert rebinned.table["energy"].max() > rebinned.table["energy"].min()
 
         # Energy grid should be monotonic (descending for TOF data since E ∝ 1/t²)
-        energy_diffs = np.diff(rebinned.table['energy'])
+        energy_diffs = np.diff(rebinned.table["energy"])
         # Check that all differences have the same sign (monotonic)
         assert np.all(energy_diffs < 0) or np.all(energy_diffs > 0)
 
@@ -176,11 +165,7 @@ class TestGroupedDataRebin:
         err_2d = np.ones((n_groups, len(tof))) * 0.04  # Constant 4% error
 
         data = Data.from_grouped_arrays(
-            tof=tof,
-            trans=trans_2d,
-            err=err_2d,
-            L=10.0,
-            tstep=1e-6
+            tof=tof, trans=trans_2d, err=err_2d, L=10.0, tstep=1e-6
         )
 
         # Rebin with n=4
@@ -206,11 +191,7 @@ class TestGroupedDataRebin:
         err_2d = np.ones((n_pixels, n_energy)) * 0.03
 
         data = Data.from_grouped_arrays(
-            tof=tof,
-            trans=trans_2d,
-            err=err_2d,
-            L=10.0,
-            tstep=1e-6
+            tof=tof, trans=trans_2d, err=err_2d, L=10.0, tstep=1e-6
         )
 
         # Rebin energy axis
@@ -235,12 +216,7 @@ class TestGroupedDataRebin:
         indices_2d = [(i, j) for i in range(nx) for j in range(ny)]
 
         data = Data.from_grouped_arrays(
-            tof=tof,
-            trans=trans_2d,
-            err=err_2d,
-            L=10.0,
-            tstep=1e-6,
-            indices=indices_2d
+            tof=tof, trans=trans_2d, err=err_2d, L=10.0, tstep=1e-6, indices=indices_2d
         )
 
         # Rebin
@@ -266,11 +242,7 @@ class TestGroupedDataRebin:
         err_2d = np.ones((3, len(tof))) * 0.02
 
         data = Data.from_grouped_arrays(
-            tof=tof,
-            trans=trans_2d,
-            err=err_2d,
-            L=10.0,
-            tstep=1e-6
+            tof=tof, trans=trans_2d, err=err_2d, L=10.0, tstep=1e-6
         )
 
         # Rebin with n=1 (no rebinning)
@@ -280,9 +252,7 @@ class TestGroupedDataRebin:
         assert len(rebinned.table) == len(data.table)
 
         # Values should be identical (or very close)
-        np.testing.assert_array_almost_equal(
-            rebinned.grouped_trans, data.grouped_trans
-        )
+        np.testing.assert_array_almost_equal(rebinned.grouped_trans, data.grouped_trans)
 
     def test_grouped_rebin_validates_parameters(self):
         """Test that rebinning validates parameters correctly."""
@@ -291,11 +261,7 @@ class TestGroupedDataRebin:
         err_2d = np.ones((2, len(tof))) * 0.02
 
         data = Data.from_grouped_arrays(
-            tof=tof,
-            trans=trans_2d,
-            err=err_2d,
-            L=10.0,
-            tstep=1e-6
+            tof=tof, trans=trans_2d, err=err_2d, L=10.0, tstep=1e-6
         )
 
         # Should raise error if both n and tstep provided
@@ -320,12 +286,7 @@ class TestGroupedDataRebin:
         indices_2d = [(i, j) for i in range(nx) for j in range(ny)]
 
         data = Data.from_grouped_arrays(
-            tof=tof,
-            trans=trans_2d,
-            err=err_2d,
-            L=10.0,
-            tstep=1e-6,
-            indices=indices_2d
+            tof=tof, trans=trans_2d, err=err_2d, L=10.0, tstep=1e-6, indices=indices_2d
         )
 
         # Rebin to reduce data size
@@ -337,5 +298,5 @@ class TestGroupedDataRebin:
         assert len(rebinned.indices) == n_pixels
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

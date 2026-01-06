@@ -48,7 +48,7 @@ Pandas Integration
 
 By using pandas DataFrame as the underlying data structure, nres allows users to leverage the full power of pandas for data manipulation and analysis. Some key advantages include:
 
-1. **Data Filtering**: 
+1. **Data Filtering**:
    You can easily filter your data based on energy ranges or other criteria:
 
    .. code-block:: python

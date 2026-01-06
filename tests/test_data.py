@@ -1,10 +1,14 @@
-import pytest
-import pandas as pd
-import numpy as np
-import tempfile
+from __future__ import annotations
+
 import os
-from nres.data import Data
+import tempfile
+
+import numpy as np
+import pandas as pd
+import pytest
+
 from nres import utils
+from nres.data import Data
 
 
 class TestDataL0T0:
@@ -22,12 +26,12 @@ class TestDataL0T0:
         openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
 
         # Write files
-        pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-            signal_file, index=False
-        )
-        pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-            openbeam_file, index=False
-        )
+        pd.DataFrame(
+            {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+        ).to_csv(signal_file, index=False)
+        pd.DataFrame(
+            {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+        ).to_csv(openbeam_file, index=False)
 
         # Load data with defaults
         data1 = Data.from_counts(str(signal_file), str(openbeam_file))
@@ -49,12 +53,12 @@ class TestDataL0T0:
         signal_counts = np.array([900, 800, 700, 600, 500])
         openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
 
-        pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-            signal_file, index=False
-        )
-        pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-            openbeam_file, index=False
-        )
+        pd.DataFrame(
+            {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+        ).to_csv(signal_file, index=False)
+        pd.DataFrame(
+            {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+        ).to_csv(openbeam_file, index=False)
 
         # Load with default L0=1.0
         data_default = Data.from_counts(str(signal_file), str(openbeam_file))
@@ -77,12 +81,12 @@ class TestDataL0T0:
         signal_counts = np.array([900, 800, 700, 600, 500])
         openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
 
-        pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-            signal_file, index=False
-        )
-        pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-            openbeam_file, index=False
-        )
+        pd.DataFrame(
+            {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+        ).to_csv(signal_file, index=False)
+        pd.DataFrame(
+            {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+        ).to_csv(openbeam_file, index=False)
 
         # Load with default t0=0.0
         data_default = Data.from_counts(str(signal_file), str(openbeam_file))
@@ -138,19 +142,19 @@ class TestDataGrouped:
             signal_counts = np.array([900 - i * 100, 800 - i * 100, 700 - i * 100])
             openbeam_counts = np.array([1000, 1000, 1000])
 
-            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                signal_dir / f"pixel_{i}.csv", index=False
-            )
-            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                openbeam_dir / f"pixel_{i}.csv", index=False
-            )
+            pd.DataFrame(
+                {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+            ).to_csv(signal_dir / f"pixel_{i}.csv", index=False)
+            pd.DataFrame(
+                {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+            ).to_csv(openbeam_dir / f"pixel_{i}.csv", index=False)
 
         # Load grouped data
         data = Data.from_grouped(
             str(signal_dir / "pixel_*.csv"),
             str(openbeam_dir / "pixel_*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         assert data.is_grouped
@@ -173,19 +177,23 @@ class TestDataGrouped:
                 signal_counts = np.array([900, 800, 700])
                 openbeam_counts = np.array([1000, 1000, 1000])
 
-                pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                    signal_dir / f"pixel_x{x}_y{y}.csv", index=False
-                )
-                pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                    openbeam_dir / f"pixel_x{x}_y{y}.csv", index=False
-                )
+                pd.DataFrame(
+                    {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+                ).to_csv(signal_dir / f"pixel_x{x}_y{y}.csv", index=False)
+                pd.DataFrame(
+                    {
+                        "tof": tof,
+                        "counts": openbeam_counts,
+                        "err": np.sqrt(openbeam_counts),
+                    }
+                ).to_csv(openbeam_dir / f"pixel_x{x}_y{y}.csv", index=False)
 
         # Load grouped data
         data = Data.from_grouped(
             str(signal_dir / "pixel_*.csv"),
             str(openbeam_dir / "pixel_*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         assert data.is_grouped
@@ -217,7 +225,7 @@ class TestDataGrouped:
             str(openbeam_dir / "*.csv"),
             indices=names,
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         assert data.is_grouped
@@ -246,7 +254,7 @@ class TestDataGrouped:
             str(signal_dir / "*.csv"),
             str(openbeam_dir / "*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         # Load with L0=1.1
@@ -255,14 +263,13 @@ class TestDataGrouped:
             str(openbeam_dir / "*.csv"),
             L0=1.1,
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         # Check that energies are different
         for idx in data_default.indices:
             assert not np.allclose(
-                data_default.groups[idx]["energy"],
-                data_L0.groups[idx]["energy"]
+                data_default.groups[idx]["energy"], data_L0.groups[idx]["energy"]
             )
 
 
@@ -290,12 +297,13 @@ class TestDataPlot:
             str(signal_dir / "*.csv"),
             str(openbeam_dir / "*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         # Should not raise error
         import matplotlib
-        matplotlib.use('Agg')  # Non-interactive backend
+
+        matplotlib.use("Agg")  # Non-interactive backend
         ax = data.plot(index=0)
         assert ax is not None
 
@@ -317,10 +325,13 @@ class TestDataPlot:
         data = Data.from_counts(str(signal_file), str(openbeam_file))
 
         import matplotlib
-        matplotlib.use('Agg')
+
+        matplotlib.use("Agg")
 
         # Should raise error when specifying index for non-grouped data
-        with pytest.raises(ValueError, match="Cannot specify index for non-grouped data"):
+        with pytest.raises(
+            ValueError, match="Cannot specify index for non-grouped data"
+        ):
             data.plot(index=0)
 
     def test_plot_map_1d(self, tmp_path):
@@ -335,22 +346,23 @@ class TestDataPlot:
             signal_counts = np.array([900 - i * 100, 800 - i * 100, 700 - i * 100])
             openbeam_counts = np.array([1000, 1000, 1000])
 
-            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                signal_dir / f"pixel_{i}.csv", index=False
-            )
-            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                openbeam_dir / f"pixel_{i}.csv", index=False
-            )
+            pd.DataFrame(
+                {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+            ).to_csv(signal_dir / f"pixel_{i}.csv", index=False)
+            pd.DataFrame(
+                {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+            ).to_csv(openbeam_dir / f"pixel_{i}.csv", index=False)
 
         data = Data.from_grouped(
             str(signal_dir / "pixel_*.csv"),
             str(openbeam_dir / "pixel_*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         import matplotlib
-        matplotlib.use('Agg')
+
+        matplotlib.use("Agg")
 
         # Test plot_map works
         ax = data.plot_map(emin=1e5, emax=1e7)
@@ -369,22 +381,27 @@ class TestDataPlot:
                 signal_counts = np.array([900, 800, 700])
                 openbeam_counts = np.array([1000, 1000, 1000])
 
-                pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                    signal_dir / f"pixel_x{x}_y{y}.csv", index=False
-                )
-                pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                    openbeam_dir / f"pixel_x{x}_y{y}.csv", index=False
-                )
+                pd.DataFrame(
+                    {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+                ).to_csv(signal_dir / f"pixel_x{x}_y{y}.csv", index=False)
+                pd.DataFrame(
+                    {
+                        "tof": tof,
+                        "counts": openbeam_counts,
+                        "err": np.sqrt(openbeam_counts),
+                    }
+                ).to_csv(openbeam_dir / f"pixel_x{x}_y{y}.csv", index=False)
 
         data = Data.from_grouped(
             str(signal_dir / "pixel_*.csv"),
             str(openbeam_dir / "pixel_*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         import matplotlib
-        matplotlib.use('Agg')
+
+        matplotlib.use("Agg")
 
         # Test plot_map works for 2D data
         ax = data.plot_map(emin=1e5, emax=1e7)
@@ -424,38 +441,54 @@ class TestDataBackgroundCorrectedRebin:
         empty_openbeam_file = tmp_path / "empty_openbeam.csv"
 
         # Create mock data (similar to user's test case)
-        tof = np.arange(1, 1001)  # Start from 1 to avoid division by zero in energy calculation
+        tof = np.arange(
+            1, 1001
+        )  # Start from 1 to avoid division by zero in energy calculation
         signal_counts = np.random.poisson(200, size=1000).astype(float)
         openbeam_counts = np.random.poisson(400, size=1000).astype(float)
         empty_signal_counts = np.random.poisson(50, size=1000).astype(float)
         empty_openbeam_counts = np.random.poisson(50, size=1000).astype(float)
 
         # Write files
-        pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-            signal_file, index=False
-        )
-        pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-            openbeam_file, index=False
-        )
-        pd.DataFrame({"tof": tof, "counts": empty_signal_counts, "err": np.sqrt(empty_signal_counts)}).to_csv(
-            empty_signal_file, index=False
-        )
-        pd.DataFrame({"tof": tof, "counts": empty_openbeam_counts, "err": np.sqrt(empty_openbeam_counts)}).to_csv(
-            empty_openbeam_file, index=False
-        )
+        pd.DataFrame(
+            {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+        ).to_csv(signal_file, index=False)
+        pd.DataFrame(
+            {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+        ).to_csv(openbeam_file, index=False)
+        pd.DataFrame(
+            {
+                "tof": tof,
+                "counts": empty_signal_counts,
+                "err": np.sqrt(empty_signal_counts),
+            }
+        ).to_csv(empty_signal_file, index=False)
+        pd.DataFrame(
+            {
+                "tof": tof,
+                "counts": empty_openbeam_counts,
+                "err": np.sqrt(empty_openbeam_counts),
+            }
+        ).to_csv(empty_openbeam_file, index=False)
 
         # Load data with background correction
         data = Data.from_counts(
-            str(signal_file), str(openbeam_file),
-            str(empty_signal_file), str(empty_openbeam_file),
-            L=10.85, tstep=1.5625e-9, verbosity=0
+            str(signal_file),
+            str(openbeam_file),
+            str(empty_signal_file),
+            str(empty_openbeam_file),
+            L=10.85,
+            tstep=1.5625e-9,
+            verbosity=0,
         )
 
         # Rebin with same tstep (should be identity operation for transmission)
         data_rebinned = data.rebin(tstep=data.tstep)
 
         # Check signal counts are preserved
-        assert np.allclose(data.signal["counts"].values, data_rebinned.signal["counts"].values)
+        assert np.allclose(
+            data.signal["counts"].values, data_rebinned.signal["counts"].values
+        )
 
         # Check transmission is preserved (ratio should be ~1.0)
         mean_trans_original = data.table["trans"].mean()
@@ -474,31 +507,45 @@ class TestDataBackgroundCorrectedRebin:
         empty_openbeam_file = tmp_path / "empty_openbeam.csv"
 
         # Create mock data
-        tof = np.arange(1, 1001)  # Start from 1 to avoid division by zero in energy calculation
+        tof = np.arange(
+            1, 1001
+        )  # Start from 1 to avoid division by zero in energy calculation
         signal_counts = np.random.poisson(200, size=1000).astype(float)
         openbeam_counts = np.random.poisson(400, size=1000).astype(float)
         empty_signal_counts = np.random.poisson(50, size=1000).astype(float)
         empty_openbeam_counts = np.random.poisson(50, size=1000).astype(float)
 
         # Write files
-        pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-            signal_file, index=False
-        )
-        pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-            openbeam_file, index=False
-        )
-        pd.DataFrame({"tof": tof, "counts": empty_signal_counts, "err": np.sqrt(empty_signal_counts)}).to_csv(
-            empty_signal_file, index=False
-        )
-        pd.DataFrame({"tof": tof, "counts": empty_openbeam_counts, "err": np.sqrt(empty_openbeam_counts)}).to_csv(
-            empty_openbeam_file, index=False
-        )
+        pd.DataFrame(
+            {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+        ).to_csv(signal_file, index=False)
+        pd.DataFrame(
+            {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+        ).to_csv(openbeam_file, index=False)
+        pd.DataFrame(
+            {
+                "tof": tof,
+                "counts": empty_signal_counts,
+                "err": np.sqrt(empty_signal_counts),
+            }
+        ).to_csv(empty_signal_file, index=False)
+        pd.DataFrame(
+            {
+                "tof": tof,
+                "counts": empty_openbeam_counts,
+                "err": np.sqrt(empty_openbeam_counts),
+            }
+        ).to_csv(empty_openbeam_file, index=False)
 
         # Load data with background correction
         data = Data.from_counts(
-            str(signal_file), str(openbeam_file),
-            str(empty_signal_file), str(empty_openbeam_file),
-            L=10.85, tstep=1.5625e-9, verbosity=0
+            str(signal_file),
+            str(openbeam_file),
+            str(empty_signal_file),
+            str(empty_openbeam_file),
+            L=10.85,
+            tstep=1.5625e-9,
+            verbosity=0,
         )
 
         # Rebin with n=2 (combine 2 bins)
@@ -515,7 +562,9 @@ class TestDataBackgroundCorrectedRebin:
         mean_trans_rebinned = data_rebinned.table["trans"].mean()
 
         # Allow 10% variation due to binning effects
-        assert abs(mean_trans_rebinned - mean_trans_original) / mean_trans_original < 0.1
+        assert (
+            abs(mean_trans_rebinned - mean_trans_original) / mean_trans_original < 0.1
+        )
 
 
 if __name__ == "__main__":

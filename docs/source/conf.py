@@ -5,36 +5,38 @@
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+from __future__ import annotations
 
-project = 'nres'
-copyright = '2024, Tsviki Y. Hirsh'
-author = 'Tsviki Y. Hirsh'
-release = '0.2.2'
+import os
+import sys
+
+# Add your project source directory to sys.path
+sys.path.insert(0, os.path.abspath("../../src"))
+
+project = "nres"
+copyright = "2024, Tsviki Y. Hirsh"
+author = "Tsviki Y. Hirsh"
+release = "0.2.2"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.napoleon',
-    'sphinx_autodoc_typehints',
-    'sphinx.ext.viewcode',
+    "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
+    "sphinx_autodoc_typehints",
+    "sphinx.ext.viewcode",
 ]
 
-templates_path = ['_templates']
+templates_path = ["_templates"]
 exclude_patterns = []
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'sphinx_rtd_theme'
-html_static_path = ['_static']
-templates_path = ['_templates']
-pygments_style = 'sphinx'
+html_theme = "sphinx_rtd_theme"
+html_static_path = ["_static"]
+templates_path = ["_templates"]
+pygments_style = "sphinx"
 autosummary_generate = True  # Generate autosummary pages
-autodoc_mock_imports = ['nres._integrate_xs']
-
-# Add your project source directory to sys.path
-import os
-import sys
-sys.path.insert(0, os.path.abspath('../../src'))
+autodoc_mock_imports = ["nres._integrate_xs"]

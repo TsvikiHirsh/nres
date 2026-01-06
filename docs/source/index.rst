@@ -79,7 +79,7 @@ For questions, issues, or contributions, please visit the `GitHub repository <ht
    cross_section_usage
    data_usage
    models_physics
-   models_usage 
+   models_usage
    modules
    cross_section
    data

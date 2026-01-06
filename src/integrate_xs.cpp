@@ -6,7 +6,7 @@
 // Linear interpolation function
 double linear_interp(const std::vector<double>& xs_energies, const std::vector<double>& xs_values, double energy) {
     size_t n = xs_energies.size();
-    
+
     // If the energy is out of bounds, return 0 (or handle as needed)
     if (energy <= xs_energies.front()) return xs_values.front();
     if (energy >= xs_energies.back()) return xs_values.back();
@@ -18,7 +18,7 @@ double linear_interp(const std::vector<double>& xs_energies, const std::vector<d
             return xs_values[i] + slope * (energy - xs_energies[i]);
         }
     }
-    
+
     return 0.0; // Default return in case of error
 }
 
@@ -30,7 +30,7 @@ std::vector<double> convolve_with_kernel(const std::vector<double>& values, cons
 
     // Create a padded version of the input values
     std::vector<double> padded_values(values_size + 2 * pad_size, 0.0);
-    
+
     // Copy original values into the padded vector
     std::copy(values.begin(), values.end(), padded_values.begin() + pad_size);
 
@@ -69,7 +69,7 @@ std::vector<double> integrate_cross_section(
         // Add prefix bin
         double new_prefix = extended_energy_grid.front() * std::pow(extended_energy_grid.front() / extended_energy_grid[1], 1);
         extended_energy_grid.insert(extended_energy_grid.begin(), new_prefix);
-        
+
         // Add suffix bin
         double new_suffix = extended_energy_grid.back() * std::pow(extended_energy_grid.back() / extended_energy_grid[extended_energy_grid.size() - 2], 1);
         extended_energy_grid.push_back(new_suffix);
@@ -88,7 +88,7 @@ std::vector<double> integrate_cross_section(
         }
 
         // Perform trapezoidal integration
-        double integral = 0.5 * (linear_interp(xs_energies, xs_values, emin) + 
+        double integral = 0.5 * (linear_interp(xs_energies, xs_values, emin) +
                                  linear_interp(xs_energies, xs_values, emax)) * (emax - emin);
 
         // Calculate the average cross-section for this bin
@@ -117,7 +117,7 @@ std::vector<double> integrate_cross_section(
     }
 
     // Replace NaN values with zero
-    std::replace_if(integrated_values.begin(), integrated_values.end(), 
+    std::replace_if(integrated_values.begin(), integrated_values.end(),
                     [](double val) { return std::isnan(val); }, 0.0);
 
     return integrated_values;

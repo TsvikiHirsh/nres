@@ -37,3 +37,11 @@ repos:
         args: []
         additional_dependencies:
           - pytest
+          - pandas-stubs
+          - types-requests
+          - types-tqdm
+          - numpy
+          - lmfit
+          - matplotlib
+          - scipy
+          - joblib

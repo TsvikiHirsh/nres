@@ -93,33 +93,33 @@ docstring-code-format = true
 
 [tool.ruff.lint]
 select = [
-  "E", "F", "W", 
-  "B",           
-  "I",           
-  "ARG",         
-  "C4",          
-  "EM",          
-  "ICN",         
-  "ISC",         
-  "G",           
-  "PGH",         
-  "PIE",         
-  "PL",          
-  "PT",          
-  "RET",         
-  "RUF",         
-  "SIM",         
-  "UP",          
-  "YTT",         
-  "EXE",         
+  "E", "F", "W",
+  "B",
+  "I",
+  "ARG",
+  "C4",
+  "EM",
+  "ICN",
+  "ISC",
+  "G",
+  "PGH",
+  "PIE",
+  "PL",
+  "PT",
+  "RET",
+  "RUF",
+  "SIM",
+  "UP",
+  "YTT",
+  "EXE",
 ]
 ignore = [
-  "PLR",    
+  "PLR",
   "ISC001",
 ]
 unfixable = [
-  "F401",   
-  "F841",   
+  "F401",
+  "F841",
 ]
 flake8-unused-arguments.ignore-variadic-names = true
 isort.required-imports = ["from __future__ import annotations"]

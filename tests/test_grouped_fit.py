@@ -1,11 +1,15 @@
-import pytest
-import pandas as pd
-import numpy as np
+from __future__ import annotations
+
 import tempfile
-from nres.data import Data
-from nres.models import TransmissionModel
+
+import numpy as np
+import pandas as pd
+import pytest
+
 from nres.cross_section import CrossSection
+from nres.data import Data
 from nres.grouped_fit import GroupedFitResult
+from nres.models import TransmissionModel
 
 
 class TestGroupedFit:
@@ -27,19 +31,19 @@ class TestGroupedFit:
             signal_counts = np.array([900, 800, 700, 600, 500]) * trans_value
             openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
 
-            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                signal_dir / f"pixel_{i}.csv", index=False
-            )
-            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                openbeam_dir / f"pixel_{i}.csv", index=False
-            )
+            pd.DataFrame(
+                {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+            ).to_csv(signal_dir / f"pixel_{i}.csv", index=False)
+            pd.DataFrame(
+                {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+            ).to_csv(openbeam_dir / f"pixel_{i}.csv", index=False)
 
         # Load grouped data
         data = Data.from_grouped(
             str(signal_dir / "pixel_*.csv"),
             str(openbeam_dir / "pixel_*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         # Create a simple cross section and model
@@ -47,7 +51,14 @@ class TestGroupedFit:
         model = TransmissionModel(xs, vary_background=True)
 
         # Fit grouped data
-        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+        result = model.fit(
+            data,
+            emin=1e5,
+            emax=1e7,
+            method="least-squares",
+            n_jobs=1,
+            progress_bar=False,
+        )
 
         # Check that result is GroupedFitResult
         assert isinstance(result, GroupedFitResult)
@@ -58,8 +69,8 @@ class TestGroupedFit:
         for i in range(3):
             individual_result = result[str(i)]
             assert individual_result is not None
-            assert hasattr(individual_result, 'params')
-            assert hasattr(individual_result, 'redchi')
+            assert hasattr(individual_result, "params")
+            assert hasattr(individual_result, "redchi")
 
     def test_grouped_fit_2d(self, tmp_path):
         """Test grouped fitting with 2D grid data"""
@@ -76,19 +87,23 @@ class TestGroupedFit:
                 signal_counts = np.array([900, 800, 700])
                 openbeam_counts = np.array([1000, 1000, 1000])
 
-                pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                    signal_dir / f"pixel_x{x}_y{y}.csv", index=False
-                )
-                pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                    openbeam_dir / f"pixel_x{x}_y{y}.csv", index=False
-                )
+                pd.DataFrame(
+                    {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+                ).to_csv(signal_dir / f"pixel_x{x}_y{y}.csv", index=False)
+                pd.DataFrame(
+                    {
+                        "tof": tof,
+                        "counts": openbeam_counts,
+                        "err": np.sqrt(openbeam_counts),
+                    }
+                ).to_csv(openbeam_dir / f"pixel_x{x}_y{y}.csv", index=False)
 
         # Load grouped data
         data = Data.from_grouped(
             str(signal_dir / "pixel_*.csv"),
             str(openbeam_dir / "pixel_*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         # Create model
@@ -96,7 +111,14 @@ class TestGroupedFit:
         model = TransmissionModel(xs, vary_background=True)
 
         # Fit grouped data
-        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+        result = model.fit(
+            data,
+            emin=1e5,
+            emax=1e7,
+            method="least-squares",
+            n_jobs=1,
+            progress_bar=False,
+        )
 
         # Check results
         assert isinstance(result, GroupedFitResult)
@@ -128,19 +150,26 @@ class TestGroupedFit:
             str(signal_dir / "*.csv"),
             str(openbeam_dir / "*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         xs = CrossSection(Ag="Ag", splitby="materials")
         model = TransmissionModel(xs, vary_background=True)
-        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+        result = model.fit(
+            data,
+            emin=1e5,
+            emax=1e7,
+            method="least-squares",
+            n_jobs=1,
+            progress_bar=False,
+        )
 
         # Test summary
         summary_df = result.summary()
         assert isinstance(summary_df, pd.DataFrame)
         assert len(summary_df) == 2
-        assert 'redchi' in summary_df.columns
-        assert 'success' in summary_df.columns
+        assert "redchi" in summary_df.columns
+        assert "success" in summary_df.columns
 
     def test_grouped_fit_rietveld(self, tmp_path):
         """Test grouped fitting with rietveld method"""
@@ -159,28 +188,36 @@ class TestGroupedFit:
             signal_counts = np.array([900, 800, 700, 600, 500])
             openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
 
-            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                signal_dir / f"pixel_{i}.csv", index=False
-            )
-            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                openbeam_dir / f"pixel_{i}.csv", index=False
-            )
+            pd.DataFrame(
+                {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+            ).to_csv(signal_dir / f"pixel_{i}.csv", index=False)
+            pd.DataFrame(
+                {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+            ).to_csv(openbeam_dir / f"pixel_{i}.csv", index=False)
 
         data = Data.from_grouped(
             str(signal_dir / "*.csv"),
             str(openbeam_dir / "*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         xs = CrossSection(Ag="Ag", splitby="materials")
         model = TransmissionModel(xs, vary_background=True)
-        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+        result = model.fit(
+            data,
+            emin=1e5,
+            emax=1e7,
+            method="least-squares",
+            n_jobs=1,
+            progress_bar=False,
+        )
 
         # Test that plot method works
         try:
             import matplotlib
-            matplotlib.use('Agg')  # Non-interactive backend
+
+            matplotlib.use("Agg")  # Non-interactive backend
             result.plot(0)
             result.plot("1")
             assert True
@@ -199,28 +236,36 @@ class TestGroupedFit:
             signal_counts = np.array([900, 800, 700, 600, 500])
             openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
 
-            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                signal_dir / f"pixel_{i}.csv", index=False
-            )
-            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                openbeam_dir / f"pixel_{i}.csv", index=False
-            )
+            pd.DataFrame(
+                {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+            ).to_csv(signal_dir / f"pixel_{i}.csv", index=False)
+            pd.DataFrame(
+                {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+            ).to_csv(openbeam_dir / f"pixel_{i}.csv", index=False)
 
         data = Data.from_grouped(
             str(signal_dir / "*.csv"),
             str(openbeam_dir / "*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         xs = CrossSection(Ag="Ag", splitby="materials")
         model = TransmissionModel(xs, vary_background=True)
-        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+        result = model.fit(
+            data,
+            emin=1e5,
+            emax=1e7,
+            method="least-squares",
+            n_jobs=1,
+            progress_bar=False,
+        )
 
         # Test that plot_total_xs method works
         try:
             import matplotlib
-            matplotlib.use('Agg')  # Non-interactive backend
+
+            matplotlib.use("Agg")  # Non-interactive backend
             result.plot_total_xs(0)
             result.plot_total_xs("1")
             assert True
@@ -239,23 +284,30 @@ class TestGroupedFit:
             signal_counts = np.array([900, 800, 700, 600, 500])
             openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
 
-            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                signal_dir / f"pixel_{i}.csv", index=False
-            )
-            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                openbeam_dir / f"pixel_{i}.csv", index=False
-            )
+            pd.DataFrame(
+                {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+            ).to_csv(signal_dir / f"pixel_{i}.csv", index=False)
+            pd.DataFrame(
+                {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+            ).to_csv(openbeam_dir / f"pixel_{i}.csv", index=False)
 
         data = Data.from_grouped(
             str(signal_dir / "*.csv"),
             str(openbeam_dir / "*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         xs = CrossSection(Ag="Ag", splitby="materials")
         model = TransmissionModel(xs, vary_background=True)
-        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+        result = model.fit(
+            data,
+            emin=1e5,
+            emax=1e7,
+            method="least-squares",
+            n_jobs=1,
+            progress_bar=False,
+        )
 
         # Test that fit_report method works and returns string
         report = result.fit_report(0)
@@ -278,23 +330,30 @@ class TestGroupedFit:
             signal_counts = np.array([900, 800, 700, 600, 500])
             openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
 
-            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                signal_dir / f"pixel_{i}.csv", index=False
-            )
-            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                openbeam_dir / f"pixel_{i}.csv", index=False
-            )
+            pd.DataFrame(
+                {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+            ).to_csv(signal_dir / f"pixel_{i}.csv", index=False)
+            pd.DataFrame(
+                {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+            ).to_csv(openbeam_dir / f"pixel_{i}.csv", index=False)
 
         data = Data.from_grouped(
             str(signal_dir / "*.csv"),
             str(openbeam_dir / "*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         xs = CrossSection(Ag="Ag", splitby="materials")
         model = TransmissionModel(xs, vary_background=True)
-        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+        result = model.fit(
+            data,
+            emin=1e5,
+            emax=1e7,
+            method="least-squares",
+            n_jobs=1,
+            progress_bar=False,
+        )
 
         # Test HTML representation
         html = result._repr_html_()
@@ -314,18 +373,18 @@ class TestGroupedFit:
             signal_counts = np.array([900, 800, 700, 600, 500])
             openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
 
-            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                signal_dir / f"pixel_{i}.csv", index=False
-            )
-            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                openbeam_dir / f"pixel_{i}.csv", index=False
-            )
+            pd.DataFrame(
+                {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+            ).to_csv(signal_dir / f"pixel_{i}.csv", index=False)
+            pd.DataFrame(
+                {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+            ).to_csv(openbeam_dir / f"pixel_{i}.csv", index=False)
 
         data = Data.from_grouped(
             str(signal_dir / "*.csv"),
             str(openbeam_dir / "*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         xs = CrossSection(Ag="Ag", splitby="materials")
@@ -334,7 +393,8 @@ class TestGroupedFit:
         # Test that plot requires index for grouped data
         try:
             import matplotlib
-            matplotlib.use('Agg')  # Non-interactive backend
+
+            matplotlib.use("Agg")  # Non-interactive backend
 
             # Should raise error without index
             with pytest.raises(ValueError, match="Data is grouped"):
@@ -351,7 +411,6 @@ class TestGroupedFit:
         except ImportError:
             pytest.skip("matplotlib not available")
 
-
     def test_grouped_fit_save_load_compact(self, tmp_path):
         """Test save/load with compact=True"""
         signal_dir = tmp_path / "signal"
@@ -364,23 +423,30 @@ class TestGroupedFit:
             signal_counts = np.array([900, 800, 700, 600, 500])
             openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
 
-            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                signal_dir / f"pixel_{i}.csv", index=False
-            )
-            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                openbeam_dir / f"pixel_{i}.csv", index=False
-            )
+            pd.DataFrame(
+                {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+            ).to_csv(signal_dir / f"pixel_{i}.csv", index=False)
+            pd.DataFrame(
+                {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+            ).to_csv(openbeam_dir / f"pixel_{i}.csv", index=False)
 
         data = Data.from_grouped(
             str(signal_dir / "*.csv"),
             str(openbeam_dir / "*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         xs = CrossSection(Ag="Ag", splitby="materials")
         model = TransmissionModel(xs, vary_background=True)
-        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+        result = model.fit(
+            data,
+            emin=1e5,
+            emax=1e7,
+            method="least-squares",
+            n_jobs=1,
+            progress_bar=False,
+        )
 
         # Save compact
         save_path = tmp_path / "result_compact.json"
@@ -403,7 +469,7 @@ class TestGroupedFit:
                 np.testing.assert_almost_equal(
                     orig_params[param_name].value,
                     loaded_params[param_name].value,
-                    decimal=6
+                    decimal=6,
                 )
 
     def test_grouped_fit_save_load_full(self, tmp_path):
@@ -418,23 +484,30 @@ class TestGroupedFit:
             signal_counts = np.array([900, 800, 700, 600, 500])
             openbeam_counts = np.array([1000, 1000, 1000, 1000, 1000])
 
-            pd.DataFrame({"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}).to_csv(
-                signal_dir / f"pixel_{i}.csv", index=False
-            )
-            pd.DataFrame({"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}).to_csv(
-                openbeam_dir / f"pixel_{i}.csv", index=False
-            )
+            pd.DataFrame(
+                {"tof": tof, "counts": signal_counts, "err": np.sqrt(signal_counts)}
+            ).to_csv(signal_dir / f"pixel_{i}.csv", index=False)
+            pd.DataFrame(
+                {"tof": tof, "counts": openbeam_counts, "err": np.sqrt(openbeam_counts)}
+            ).to_csv(openbeam_dir / f"pixel_{i}.csv", index=False)
 
         data = Data.from_grouped(
             str(signal_dir / "*.csv"),
             str(openbeam_dir / "*.csv"),
             verbosity=0,
-            n_jobs=1
+            n_jobs=1,
         )
 
         xs = CrossSection(Ag="Ag", splitby="materials")
         model = TransmissionModel(xs, vary_background=True)
-        result = model.fit(data, emin=1e5, emax=1e7, method="least-squares", n_jobs=1, progress_bar=False)
+        result = model.fit(
+            data,
+            emin=1e5,
+            emax=1e7,
+            method="least-squares",
+            n_jobs=1,
+            progress_bar=False,
+        )
 
         # Save full
         save_path = tmp_path / "result_full.json"
@@ -459,30 +532,28 @@ class TestGroupedFit:
 
             assert loaded_result_item.success == orig_result.success
             assert loaded_result_item.nfev == orig_result.nfev
-            np.testing.assert_almost_equal(loaded_result_item.redchi, orig_result.redchi, decimal=6)
-
+            np.testing.assert_almost_equal(
+                loaded_result_item.redchi, orig_result.redchi, decimal=6
+            )
 
     def test_grouped_fit_memory_management(self, tmp_path):
         """Test memory management parameters for grouped fitting"""
-        from nres.models import TransmissionModel
+        import numpy as np
+
         from nres.cross_section import CrossSection
         from nres.data import Data
-        import numpy as np
+        from nres.models import TransmissionModel
 
         # Create small 1D grouped data for quick testing
         energies = np.logspace(5, 7, 20)
-        indices = ['0', '1']
+        indices = ["0", "1"]
 
         # Create grouped data
         groups = {}
         for idx in indices:
             trans = 0.8 + 0.05 * int(idx) + 0.01 * np.random.randn(len(energies))
             err = 0.01 * np.ones_like(trans)
-            groups[idx] = pd.DataFrame({
-                'energy': energies,
-                'trans': trans,
-                'err': err
-            })
+            groups[idx] = pd.DataFrame({"energy": energies, "trans": trans, "err": err})
 
         data = Data()
         data.groups = groups
@@ -497,24 +568,40 @@ class TestGroupedFit:
         model = TransmissionModel(xs, vary_background=True)
 
         # Test 1: Fit with default parameters (should use n_jobs=10)
-        result = model.fit(data, verbose=False, progress_bar=False, method="least-squares")
+        result = model.fit(
+            data, verbose=False, progress_bar=False, method="least-squares"
+        )
         assert isinstance(result, GroupedFitResult)
         assert len(result) == 2
 
         # Test 2: Fit with custom n_jobs
-        result = model.fit(data, verbose=False, progress_bar=False, method="least-squares", n_jobs=2)
+        result = model.fit(
+            data, verbose=False, progress_bar=False, method="least-squares", n_jobs=2
+        )
         assert isinstance(result, GroupedFitResult)
         assert len(result) == 2
 
         # Test 3: Fit with custom max_nbytes (should not crash)
-        result = model.fit(data, verbose=False, progress_bar=False, method="least-squares",
-                          n_jobs=2, max_nbytes='50M')
+        result = model.fit(
+            data,
+            verbose=False,
+            progress_bar=False,
+            method="least-squares",
+            n_jobs=2,
+            max_nbytes="50M",
+        )
         assert isinstance(result, GroupedFitResult)
         assert len(result) == 2
 
         # Test 4: Fit with max_nbytes=None (disable memory limit)
-        result = model.fit(data, verbose=False, progress_bar=False, method="least-squares",
-                          n_jobs=2, max_nbytes=None)
+        result = model.fit(
+            data,
+            verbose=False,
+            progress_bar=False,
+            method="least-squares",
+            n_jobs=2,
+            max_nbytes=None,
+        )
         assert isinstance(result, GroupedFitResult)
         assert len(result) == 2
 
