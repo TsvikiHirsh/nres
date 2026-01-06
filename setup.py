@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import os
+
 import pybind11
 from setuptools import Extension, find_packages, setup
+
+# Get the directory containing setup.py
+here = os.path.abspath(os.path.dirname(__file__))
 
 # Define the extension module
 ext_modules = [
     Extension(
         "nres._integrate_xs",
         sources=["src/bindings.cpp", "src/integrate_xs.cpp"],
-        include_dirs=[pybind11.get_include(), "include"],
+        include_dirs=[pybind11.get_include(), os.path.join(here, "include")],
         extra_compile_args=["-std=c++17"],  # Add C++17 requirement
     )
 ]

@@ -1,0 +1,16 @@
+# Include C++ source files and headers
+include src/*.cpp
+include include/*.h
+recursive-include src *.cpp
+
+# Include package data
+recursive-include src/nres/data *.json
+
+# Include documentation
+include README.md
+include LICENSE
+include CHANGELOG.md
+
+# Include configuration files
+include pyproject.toml
+include setup.py
