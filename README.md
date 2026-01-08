@@ -75,13 +75,13 @@ import nres
 Si = nres.CrossSection("Silicon")
 
 # Load data
-data = nres.Data.from_transmission("silicon.dat") 
+data = nres.Data.from_transmission("silicon.dat")
 
 # Define model
 model = nres.TransmissionModel(Si, vary_background=True)
 
 # Fit using lmfit
-result = model.fit(data, emin=0.4e6, emax=1.7e6) 
+result = model.fit(data, emin=0.4e6, emax=1.7e6)
 
 # Plot fit results
 result.plot()

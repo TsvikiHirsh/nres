@@ -10,8 +10,14 @@ from scipy.stats import exponnorm
 
 
 class Response:
-    def __init__(self, kind="expo_gauss", vary: bool = False, eps: float = 1.0e-6,
-                 tstep=1.56255e-9, nbins=300):
+    def __init__(
+        self,
+        kind="expo_gauss",
+        vary: bool = False,
+        eps: float = 1.0e-6,
+        tstep=1.56255e-9,
+        nbins=300,
+    ):
         """
         Initializes the Response object with specified parameters.
 
@@ -32,13 +38,21 @@ class Response:
         if kind == "expo_gauss":
             self.function = self.expogauss_response
             self.params = lmfit.Parameters()
-            self.params.add('K', value=1.0, min=0.0001, vary=vary)  # Exponential shape parameter
-            self.params.add('x0', value=1e-9, vary=vary)            # Location parameter (Gaussian)
-            self.params.add('τ', value=1e-9, min=1e-10, vary=vary)  # Exponential scale parameter
+            self.params.add(
+                "K", value=1.0, min=0.0001, vary=vary
+            )  # Exponential shape parameter
+            self.params.add(
+                "x0", value=1e-9, vary=vary
+            )  # Location parameter (Gaussian)
+            self.params.add(
+                "τ", value=1e-9, min=1e-10, vary=vary
+            )  # Exponential scale parameter
         elif kind == "none":
             self.function = self.empty_response
         else:
-            raise NotImplementedError(f"Response kind '{kind}' is not supported. Use 'expo_gauss' or 'none'.")
+            raise NotImplementedError(
+                f"Response kind '{kind}' is not supported. Use 'expo_gauss' or 'none'."
+            )
 
     def register_response(self, response_func, lmfit_params=None, **kwargs):
         """
@@ -50,14 +64,15 @@ class Response:
         kwargs: Default parameter values for the response function.
         """
 
-
         # Detect parameters of the response function
         sig_params = inspect.signature(response_func).parameters
         for param, default in kwargs.items():
             if param in sig_params:
                 self.params.add(param, value=default, vary=True)
             else:
-                raise ValueError(f"Parameter '{param}' not found in the response function signature.")
+                raise ValueError(
+                    f"Parameter '{param}' not found in the response function signature."
+                )
 
         self.function = response_func.pdf(self.tgrid)
 
@@ -65,7 +80,9 @@ class Response:
         if lmfit_params:
             for name, param in lmfit_params.items():
                 if name in self.params:
-                    self.params[name].set(value=param.value, vary=param.vary, min=param.min, max=param.max)
+                    self.params[name].set(
+                        value=param.value, vary=param.vary, min=param.min, max=param.max
+                    )
 
     def cut_array_symmetric(self, arr, threshold):
         """
@@ -94,9 +111,9 @@ class Response:
         """
         Returns an empty response [0.0, 1.0, 0.0].
         """
-        return np.array([0., 1., 0.])
+        return np.array([0.0, 1.0, 0.0])
 
-    def expogauss_response(self, K=0.01, x0=0., τ=1.0e-9, **kwargs):
+    def expogauss_response(self, K=0.01, x0=0.0, τ=1.0e-9, **kwargs):
         """
         Computes the exponential-Gaussian response function.
 
@@ -142,26 +159,28 @@ class Background:
         self.params = lmfit.Parameters()
         if kind == "polynomial3":
             self.function = self.polynomial3_background
-            self.params.add('b0', value=0.0, min=-1e6, max=1e6, vary=vary)
-            self.params.add('b1', value=0.0, min=-1e6, max=1e6, vary=vary)
-            self.params.add('b2', value=0.0, min=-1e6, max=1e6, vary=vary)
+            self.params.add("b0", value=0.0, min=-1e6, max=1e6, vary=vary)
+            self.params.add("b1", value=0.0, min=-1e6, max=1e6, vary=vary)
+            self.params.add("b2", value=0.0, min=-1e6, max=1e6, vary=vary)
         elif kind == "polynomial5":
             self.function = self.polynomial5_background
             for i in range(5):
-                self.params.add(f'b{i}', value=0.0, min=-1e6, max=1e6, vary=vary)
+                self.params.add(f"b{i}", value=0.0, min=-1e6, max=1e6, vary=vary)
         elif kind == "sample_dependent":
             self.function = self.polynomial3_background
-            self.params.add('b0', value=0.0, min=-1e6, max=1e6, vary=vary)
-            self.params.add('b1', value=0.0, min=-1e6, max=1e6, vary=vary)
-            self.params.add('b2', value=0.0, min=-1e6, max=1e6, vary=vary)
-            self.params.add('k', value=1.0, min=0., max=10., vary=vary)
+            self.params.add("b0", value=0.0, min=-1e6, max=1e6, vary=vary)
+            self.params.add("b1", value=0.0, min=-1e6, max=1e6, vary=vary)
+            self.params.add("b2", value=0.0, min=-1e6, max=1e6, vary=vary)
+            self.params.add("k", value=1.0, min=0.0, max=10.0, vary=vary)
         elif kind == "constant":
             self.function = self.constant_background
-            self.params.add('b0', value=0.0, min=-1e6, max=1e6, vary=vary)
+            self.params.add("b0", value=0.0, min=-1e6, max=1e6, vary=vary)
         elif kind == "none":
             self.function = self.empty_background
         else:
-            raise NotImplementedError(f"Background kind '{kind}' is not supported. Use 'none', 'constant', 'sample_dependent', 'polynomial3', or 'polynomial5'.")
+            raise NotImplementedError(
+                f"Background kind '{kind}' is not supported. Use 'none', 'constant', 'sample_dependent', 'polynomial3', or 'polynomial5'."
+            )
 
     def empty_background(self, E, **kwargs):
         """
@@ -169,7 +188,7 @@ class Background:
         """
         return np.zeros_like(E)
 
-    def constant_background(self, E, b0=0., **kwargs):
+    def constant_background(self, E, b0=0.0, **kwargs):
         """
         Generates a constant background.
 
@@ -180,7 +199,7 @@ class Background:
         bg = np.full_like(E, b0)
         return np.maximum(0, bg)
 
-    def polynomial3_background(self, E, b0=0., b1=1., b2=0., **kwargs):
+    def polynomial3_background(self, E, b0=0.0, b1=1.0, b2=0.0, **kwargs):
         """
         Computes a third-degree polynomial background.
 
@@ -192,7 +211,9 @@ class Background:
         """
         return np.maximum(0, b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E))
 
-    def polynomial5_background(self, E, b0=0., b1=1., b2=0., b3=0., b4=0., **kwargs):
+    def polynomial5_background(
+        self, E, b0=0.0, b1=1.0, b2=0.0, b3=0.0, b4=0.0, **kwargs
+    ):
         """
         Computes a fifth-degree polynomial background.
 
@@ -204,7 +225,9 @@ class Background:
         b3 (float): Cubic term.
         b4 (float): Quartic term.
         """
-        return np.maximum(0, b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E) + b3 * E + b4 * E**2)
+        return np.maximum(
+            0, b0 + b1 * np.sqrt(E) + b2 / np.sqrt(E) + b3 * E + b4 * E**2
+        )
 
     def plot(self, E, params=None, **kwargs):
         """
@@ -218,7 +241,7 @@ class Background:
         ls = kwargs.pop("ls", "--")
         color = kwargs.pop("color", "0.5")
         params = params if params else self.params
-        k = params.valuesdict().get("k",1.)
-        y = k*self.function(E, **params.valuesdict())
+        k = params.valuesdict().get("k", 1.0)
+        y = k * self.function(E, **params.valuesdict())
         df = pd.Series(y, index=E, name="Background")
         df.plot(ax=ax, color=color, ls=ls, **kwargs)

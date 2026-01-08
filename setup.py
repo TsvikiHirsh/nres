@@ -30,5 +30,3 @@ setup(
     ext_modules=ext_modules,
     zip_safe=False,
 )
-
-

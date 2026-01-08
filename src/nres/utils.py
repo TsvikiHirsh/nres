@@ -1,16 +1,18 @@
-import numpy as np
-import site
-import os
-from pathlib import Path
-from tqdm import tqdm
-import requests
-import pandas as pd
-import json
+from __future__ import annotations
 
+import json
+import os
+import site
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import requests
+from tqdm import tqdm
 
 # Constants
 SPEED_OF_LIGHT = 299792458  # m/s
-MASS_OF_NEUTRON = 939.56542052 * 1e6 / (SPEED_OF_LIGHT ** 2)  # [eV s²/m²]
+MASS_OF_NEUTRON = 939.56542052 * 1e6 / (SPEED_OF_LIGHT**2)  # [eV s²/m²]
 
 
 def time2energy(time, flight_path_length):
@@ -24,8 +26,9 @@ def time2energy(time, flight_path_length):
     Returns:
     float: Energy of the neutron in electronvolts (eV).
     """
-    γ = 1 / np.sqrt(1 - (flight_path_length / time) ** 2 / SPEED_OF_LIGHT ** 2)
-    return (γ - 1) * MASS_OF_NEUTRON * SPEED_OF_LIGHT ** 2  # eV
+    γ = 1 / np.sqrt(1 - (flight_path_length / time) ** 2 / SPEED_OF_LIGHT**2)
+    return (γ - 1) * MASS_OF_NEUTRON * SPEED_OF_LIGHT**2  # eV
+
 
 def energy2time(energy, flight_path_length):
     """
@@ -38,17 +41,14 @@ def energy2time(energy, flight_path_length):
     Returns:
     float: Time-of-flight in seconds.
     """
-    γ = 1 + energy / (MASS_OF_NEUTRON * SPEED_OF_LIGHT ** 2)
-    return flight_path_length / SPEED_OF_LIGHT * np.sqrt(γ ** 2 / (γ ** 2 - 1))
-
-
-
+    γ = 1 + energy / (MASS_OF_NEUTRON * SPEED_OF_LIGHT**2)
+    return flight_path_length / SPEED_OF_LIGHT * np.sqrt(γ**2 / (γ**2 - 1))
 
 
 def load_materials_data():
     # Load the materials, elements, and isotopes data from the json dump
     data_path = Path(__file__).parent / "data" / "nres_materials.json"
-    with open(data_path, "r") as f:
+    with open(data_path) as f:
         data = json.load(f)
         materials = data["materials"]
         elements = data["elements"]
@@ -56,15 +56,14 @@ def load_materials_data():
         return materials, elements, isotopes
 
 
-
 def materials_dict():
     """
-    Generate a dictionary containing information about materials, including their densities, 
+    Generate a dictionary containing information about materials, including their densities,
     atomic densities, chemical formulas, and elemental/isotopic compositions.
 
-    The function retrieves material data from the MaterialsCompendium package and organizes 
-    it into a dictionary. Each material's total mass is calculated based on the atomic weights 
-    and weight fractions of its constituent elements. The mass of each element reflects its 
+    The function retrieves material data from the MaterialsCompendium package and organizes
+    it into a dictionary. Each material's total mass is calculated based on the atomic weights
+    and weight fractions of its constituent elements. The mass of each element reflects its
     actual atomic mass, and the total mass is weighted by element fractions.
 
     Returns:
@@ -106,7 +105,9 @@ def materials_dict():
         # Process each element in the material
         for element in material.Elements:
             name = element.Element
-            weight_fraction = element.AtomFraction_whole  # Whole weight fraction of the element
+            weight_fraction = (
+                element.AtomFraction_whole
+            )  # Whole weight fraction of the element
 
             # Get the actual atomic mass of the element (e.g., 12 for Carbon)
             element_atomic_mass = element.AtomicMass  # Actual atomic mass (g/mol)
@@ -114,7 +115,7 @@ def materials_dict():
             # Add element to the elements dict with its actual atomic mass
             elements[name] = {
                 "weight": weight_fraction,
-                "mass": element_atomic_mass  # Actual atomic mass (g/mol)
+                "mass": element_atomic_mass,  # Actual atomic mass (g/mol)
             }
 
             # Calculate isotopic contributions if present
@@ -126,7 +127,9 @@ def materials_dict():
                     isotopes[iso_name] = iso_weight
 
             # Add isotopic data to the element
-            elements[name]["isotopes"] = isotopes if isotopes else None  # If no isotopes, set None
+            elements[name]["isotopes"] = (
+                isotopes if isotopes else None
+            )  # If no isotopes, set None
 
             # Update total weighted mass for the material by summing element mass contributions weighted by fraction
             total_mass += element_atomic_mass * weight_fraction
@@ -134,32 +137,30 @@ def materials_dict():
         # Store the material information with calculated total weighted mass
         materials[mat_name] = {
             "name": mat_name,
-            "density": density,   # g/cm³
-            "n": n,               # atoms/barn
-            "mass": total_mass,    # Total molar mass (g/mol), weighted by element fractions
+            "density": density,  # g/cm³
+            "n": n,  # atoms/barn
+            "mass": total_mass,  # Total molar mass (g/mol), weighted by element fractions
             "formula": formula,
-            "elements": elements   # Each element has its actual atomic mass (g/mol)
+            "elements": elements,  # Each element has its actual atomic mass (g/mol)
         }
 
     return materials
 
 
-
-
-
 def elements_and_isotopes_dict():
     """
-    Generate a dictionary of elements and isotopes with details such as 
+    Generate a dictionary of elements and isotopes with details such as
     atoms per barn, total mass, and isotopic abundances.
-    
+
     Returns:
         elements (dict): A dictionary containing information for each element.
         isotopes (dict): A dictionary containing information for each isotope.
     """
     elements = {}
     isotopes = {}
-    
+
     import mendeleev
+
     all_elements = mendeleev.get_all_elements()
 
     for element in all_elements:
@@ -170,44 +171,47 @@ def elements_and_isotopes_dict():
         if element.density is None or element.mass is None:
             # Skip the element if either value is missing
             continue
-        
+
         # Calculate atoms per barn and total mass
         atoms_per_barn = element.density / element.mass * 0.602214076  # Atoms/barn
         total_mass = element.mass  # Atomic mass (g/mol)
-        
+
         # Initialize element entry with name, atoms per barn, and mass
         elements[name] = {
             "name": name,
             "n": atoms_per_barn,  # atoms per barn
-            "mass": total_mass,   # total atomic mass (g/mol)
-            "formula": symbol,    # Element symbol (formula)
+            "mass": total_mass,  # total atomic mass (g/mol)
+            "formula": symbol,  # Element symbol (formula)
             "density": element.density,  # g/cm³
-            "elements": {symbol: {"weight": 1}}
+            "elements": {symbol: {"weight": 1}},
         }
 
         # Add isotopic data if available
-        element_isotopes = {f"{element.symbol}{iso.mass_number}": iso.abundance * 0.01
-                            for iso in element.isotopes if iso.abundance is not None}
-        
+        element_isotopes = {
+            f"{element.symbol}{iso.mass_number}": iso.abundance * 0.01
+            for iso in element.isotopes
+            if iso.abundance is not None
+        }
+
         if element_isotopes:
             elements[name]["elements"][symbol]["isotopes"] = element_isotopes
-        
+
         # Add isotopes to a separate dictionary
         for iso in element.isotopes:
             if iso.abundance is not None:
                 iso_name = f"{element.symbol}{iso.mass_number}"
                 isotopes[iso_name] = {
                     "name": iso_name,
-                    "n": element.density / iso.mass * 0.602214076,  # Atoms/barn for the isotope
+                    "n": element.density
+                    / iso.mass
+                    * 0.602214076,  # Atoms/barn for the isotope
                     "mass": iso.mass,  # Isotope mass
                     "formula": iso_name,
                     "density": element.density,
-                    "elements": {symbol: {"weight": 1, "isotopes": {iso_name: 1.0}}}
+                    "elements": {symbol: {"weight": 1, "isotopes": {iso_name: 1.0}}},
                 }
 
     return elements, isotopes
-
-
 
 
 def format_isotope(isotope_string):
@@ -222,6 +226,7 @@ def format_isotope(isotope_string):
     # Return the original string if no digits are found
     return isotope_string
 
+
 def get_cache_path():
     # Get the user's site-packages directory
     user_site = site.getusersitepackages()
@@ -230,11 +235,12 @@ def get_cache_path():
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
 
+
 def load_or_create_materials_cache():
     data_path = Path(__file__).parent / "data" / "nres_materials.json"
 
     if data_path.exists():
-        with open(data_path, "r") as f:
+        with open(data_path) as f:
             data = json.load(f)
             materials = data.get("materials")
             elements = data.get("elements")
@@ -248,21 +254,23 @@ def load_or_create_materials_cache():
     else:
         return create_and_save_materials_cache()
 
+
 def create_and_save_materials_cache():
     materials = materials_dict()
     elements, isotopes = elements_and_isotopes_dict()
 
     data_path = Path(__file__).parent / "data" / "nres_materials.json"
     with open(data_path, "w") as f:
-        json.dump({"materials":materials,
-                   "elements":elements,
-                   "isotopes":isotopes}, f)
-    
+        json.dump(
+            {"materials": materials, "elements": elements, "isotopes": isotopes}, f
+        )
+
     return materials, elements, isotopes
+
 
 def download_xsdata():
     """Download the xsdata.npy file from GitHub and save it to the package directory."""
-    url = 'https://github.com/lanl/trinidi-data/blob/main/xsdata.npy?raw=true'
+    url = "https://github.com/lanl/trinidi-data/blob/main/xsdata.npy?raw=true"
 
     cache_path = get_cache_path() / "xsdata.npy"
 
@@ -273,33 +281,37 @@ def download_xsdata():
     # Download with progress bar
     response = requests.get(url, stream=True)
     if response.status_code == 200:
-        total_size = int(response.headers.get('content-length', 0))
-        with open(str(cache_path), 'wb') as f, tqdm(
+        total_size = int(response.headers.get("content-length", 0))
+        with open(str(cache_path), "wb") as f, tqdm(
             desc=f"Downloading {cache_path}",
             total=total_size,
-            unit='B',
+            unit="B",
             unit_scale=True,
             unit_divisor=1024,
-            ncols=80
+            ncols=80,
         ) as bar:
             for data in response.iter_content(chunk_size=1024):
                 f.write(data)
                 bar.update(len(data))
         print(f"File downloaded and saved to {cache_path}")
     else:
-        raise Exception(f"Failed to download the file. Status code: {response.status_code}")
-    
+        raise Exception(
+            f"Failed to download the file. Status code: {response.status_code}"
+        )
 
-def register_material(name, components, fractions=None, fraction_type='atomic', density=None, formula=None):
+
+def register_material(
+    name, components, fractions=None, fraction_type="atomic", density=None, formula=None
+):
     """
     Register a new material with specified components and their fractions.
 
     Args:
         name (str): Name of the material
-        components (list or dict or any): List of element/isotope names, dictionary of components and fractions, 
+        components (list or dict or any): List of element/isotope names, dictionary of components and fractions,
             or material/element/isotope dict entries
         fractions (list, optional): Corresponding fractions for each component if components is a list
-        fraction_type (str, optional): Type of fractions provided. 
+        fraction_type (str, optional): Type of fractions provided.
             Can be 'atomic' or 'weight'. Defaults to 'atomic'.
         density (float, optional): density of the new material [g/cm3]
         formula (str, optional): Custom chemical formula for the material
@@ -312,36 +324,40 @@ def register_material(name, components, fractions=None, fraction_type='atomic', 
     """
     # Avogadro's number (atoms/mol)
     AVOGADRO = 6.02214076e23
-    
+
     # Load materials cache
     materials, elements, isotopes = load_or_create_materials_cache()
 
     # Handle dictionary input for components
     if isinstance(components, dict):
         # Check if it's a predefined material/element/isotope entry
-        if all(key in components for key in ['name', 'elements', 'mass']):
+        if all(key in components for key in ["name", "elements", "mass"]):
             # If it's an existing material/element/isotope entry, use its name
             return components
-        
+
         # Normalize dictionary input
         fractions = list(components.values())
         components = list(components.keys())
     elif fractions is None:
-        raise ValueError("Fractions must be provided either as a separate list or as dictionary values")
+        raise ValueError(
+            "Fractions must be provided either as a separate list or as dictionary values"
+        )
 
     # Resolve component names (potentially from formulas)
     resolved_components = []
     for comp in components:
         # Check if component is an existing material/element/isotope entry
-        if isinstance(comp, dict) and all(key in comp for key in ['name', 'elements', 'mass']):
-            resolved_components.append(comp['name'])
+        if isinstance(comp, dict) and all(
+            key in comp for key in ["name", "elements", "mass"]
+        ):
+            resolved_components.append(comp["name"])
         # Check if component is a formula that exists in materials
-        elif comp in materials:
-            resolved_components.append(comp)
-        elif comp in elements or comp in isotopes:
+        elif comp in materials or (comp in elements or comp in isotopes):
             resolved_components.append(comp)
         else:
-            raise ValueError(f"Component {comp} not found in materials, elements, or isotopes")
+            raise ValueError(
+                f"Component {comp} not found in materials, elements, or isotopes"
+            )
 
     # Normalize fractions
     total_frac = sum(fractions)
@@ -352,20 +368,20 @@ def register_material(name, components, fractions=None, fraction_type='atomic', 
         raise ValueError("Number of components must match number of fractions")
 
     # Conversion to atomic fractions if needed
-    if fraction_type == 'weight':
+    if fraction_type == "weight":
         # Calculate atomic fractions from weight fractions
         atomic_fractions = []
         for comp, frac in zip(resolved_components, normalized_fractions):
             # Determine mass based on element, isotope, or material
             if comp in materials:
-                mass = materials[comp]['mass']
+                mass = materials[comp]["mass"]
             elif comp in elements:
-                mass = elements[comp]['mass']
+                mass = elements[comp]["mass"]
             else:
-                mass = isotopes[comp]['mass']
-            
+                mass = isotopes[comp]["mass"]
+
             atomic_fractions.append(frac / mass)
-        
+
         # Normalize to ensure sum of atomic fractions is 1
         total_atomic_frac = sum(atomic_fractions)
         atomic_fractions = [frac / total_atomic_frac for frac in atomic_fractions]
@@ -380,83 +396,90 @@ def register_material(name, components, fractions=None, fraction_type='atomic', 
         for comp, frac in zip(resolved_components, atomic_fractions):
             # Round fraction to 2 decimal places for readability
             formula_parts.append(f"{comp}_{frac:.2f}")
-        formula = '_'.join(formula_parts)
+        formula = "_".join(formula_parts)
 
     # Build material dictionary
     material = {
-        'name': name,
-        'density': density,  # User can set later
-        'n': None,  # Will be calculated
-        'mass': None,  # Will be calculated
-        'formula': formula,
-        'elements': {}
+        "name": name,
+        "density": density,  # User can set later
+        "n": None,  # Will be calculated
+        "mass": None,  # Will be calculated
+        "formula": formula,
+        "elements": {},
     }
-    
+
     total_mass = 0
     total_n = 0
-    
+
     # Process each component
     for comp, atomic_frac in zip(resolved_components, atomic_fractions):
         # Handle material as a component (if it exists in materials)
         if comp in materials:
             # If a material is used as a component, merge its elements
-            for elem, elem_info in materials[comp]['elements'].items():
-                if elem not in material['elements']:
-                    material['elements'][elem] = elem_info.copy()
-                    material['elements'][elem]['weight'] = elem_info.get('weight', 0) * atomic_frac
+            for elem, elem_info in materials[comp]["elements"].items():
+                if elem not in material["elements"]:
+                    material["elements"][elem] = elem_info.copy()
+                    material["elements"][elem]["weight"] = (
+                        elem_info.get("weight", 0) * atomic_frac
+                    )
                 else:
-                    material['elements'][elem]['weight'] += elem_info.get('weight', 0) * atomic_frac
-                
+                    material["elements"][elem]["weight"] += (
+                        elem_info.get("weight", 0) * atomic_frac
+                    )
+
                 # Update total mass and n
-                total_mass += elem_info['mass'] * elem_info.get('weight', 0) * atomic_frac
-                total_n += materials[comp].get('n', 0) * atomic_frac
-        
+                total_mass += (
+                    elem_info["mass"] * elem_info.get("weight", 0) * atomic_frac
+                )
+                total_n += materials[comp].get("n", 0) * atomic_frac
+
         # Handle individual elements
         elif comp in elements:
             # Standard element
             element_info = elements[comp].copy()
-            element_info['weight'] = atomic_frac
-            material['elements'][comp] = element_info
-            
+            element_info["weight"] = atomic_frac
+            material["elements"][comp] = element_info
+
             # Update total mass and n
-            total_mass += element_info['mass'] * atomic_frac
-            total_n += elements[comp].get('n', 0) * atomic_frac
-        
+            total_mass += element_info["mass"] * atomic_frac
+            total_n += elements[comp].get("n", 0) * atomic_frac
+
         # Handle isotopes
         elif comp in isotopes:
             # Specific isotope
             isotope_info = isotopes[comp].copy()
             parent_element = comp[:2]  # Extract element symbol
-            
+
             # If parent element not in material, add it
-            if parent_element not in material['elements']:
-                material['elements'][parent_element] = {
-                    'weight': 0,
-                    'mass': elements[parent_element]['mass'],
-                    'isotopes': {}
+            if parent_element not in material["elements"]:
+                material["elements"][parent_element] = {
+                    "weight": 0,
+                    "mass": elements[parent_element]["mass"],
+                    "isotopes": {},
                 }
-            
+
             # Update isotope information
-            material['elements'][parent_element]['isotopes'][comp] = atomic_frac
-            material['elements'][parent_element]['weight'] += atomic_frac
-            
+            material["elements"][parent_element]["isotopes"][comp] = atomic_frac
+            material["elements"][parent_element]["weight"] += atomic_frac
+
             # Update total mass and n
-            total_mass += isotope_info['mass'] * atomic_frac
-            total_n += isotopes[comp].get('n', 0) * atomic_frac
-    
+            total_mass += isotope_info["mass"] * atomic_frac
+            total_n += isotopes[comp].get("n", 0) * atomic_frac
+
     # Set final material mass
-    material['mass'] = total_mass
-    
+    material["mass"] = total_mass
+
     # Calculate n (atomic density)
     if density is not None:
         # n = (density / mass) * Avogadro * 1e-24
-        material['n'] = (density / total_mass) * AVOGADRO * 1e-24
+        material["n"] = (density / total_mass) * AVOGADRO * 1e-24
     else:
         # Use the weighted average of component n values
-        material['n'] = total_n
+        material["n"] = total_n
 
     # Register the material in the global materials dictionary
     import nres
+
     nres.materials[name] = material
 
     return material

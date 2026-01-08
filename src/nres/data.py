@@ -9,6 +9,7 @@ from nres import utils
 
 warnings.filterwarnings("ignore")
 
+
 class Data:
     """
     A class for handling neutron transmission data, including reading counts data,
@@ -64,20 +65,22 @@ class Data:
     def _read_counts(cls, filename="run2_graphite_00000/graphite.csv"):
         """
         Reads the counts data from a CSV file and calculates errors if not provided.
-        
+
         Parameters:
         -----------
         filename : str, optional
-            The path to the CSV file containing time-of-flight (tof) and counts data. 
+            The path to the CSV file containing time-of-flight (tof) and counts data.
             Default is 'run2_graphite_00000/graphite.csv'.
-        
+
         Returns:
         --------
         df : pandas.DataFrame
-            A DataFrame containing columns: 'tof', 'counts', and 'err'. Errors are calculated 
+            A DataFrame containing columns: 'tof', 'counts', and 'err'. Errors are calculated
             as the square root of counts if not provided in the file.
         """
-        df = pd.read_csv(filename, names=["tof", "counts", "err"], header=None, skiprows=1)
+        df = pd.read_csv(
+            filename, names=["tof", "counts", "err"], header=None, skiprows=1
+        )
 
         # If no error values provided, calculate as sqrt of counts
         if all(df["err"].isnull()):
@@ -89,10 +92,18 @@ class Data:
         return df
 
     @classmethod
-    def from_counts(cls, signal: str, openbeam: str,
-                    empty_signal: str = "", empty_openbeam: str = "",
-                    tstep: float = 1.56255e-9, L: float = 10.59,
-                    L0: float = 1.0, t0: float = 0.0, verbosity: int = 1):
+    def from_counts(
+        cls,
+        signal: str,
+        openbeam: str,
+        empty_signal: str = "",
+        empty_openbeam: str = "",
+        tstep: float = 1.56255e-9,
+        L: float = 10.59,
+        L0: float = 1.0,
+        t0: float = 0.0,
+        verbosity: int = 1,
+    ):
         """
         Creates a Data object from signal and open beam counts data, calculates transmission, and converts tof to energy.
 
@@ -140,13 +151,16 @@ class Data:
         # Calculate transmission and associated error
         # Suppress RuntimeWarnings from sqrt if verbosity is 0
         import warnings
+
         with warnings.catch_warnings():
             if verbosity == 0:
                 warnings.simplefilter("ignore", RuntimeWarning)
 
             transmission = signal["counts"] / openbeam["counts"]
-            err = transmission * np.sqrt((signal["err"] / signal["counts"])**2 +
-                                         (openbeam["err"] / openbeam["counts"])**2)
+            err = transmission * np.sqrt(
+                (signal["err"] / signal["counts"]) ** 2
+                + (openbeam["err"] / openbeam["counts"]) ** 2
+            )
 
             # If background (empty) data is provided, apply correction
             if empty_signal and empty_openbeam:
@@ -155,18 +169,16 @@ class Data:
 
                 transmission *= empty_openbeam["counts"] / empty_signal["counts"]
                 err = transmission * np.sqrt(
-                    (signal["err"] / signal["counts"])**2 +
-                    (openbeam["err"] / openbeam["counts"])**2 +
-                    (empty_signal["err"] / empty_signal["counts"])**2 +
-                    (empty_openbeam["err"] / empty_openbeam["counts"])**2
+                    (signal["err"] / signal["counts"]) ** 2
+                    + (openbeam["err"] / openbeam["counts"]) ** 2
+                    + (empty_signal["err"] / empty_signal["counts"]) ** 2
+                    + (empty_openbeam["err"] / empty_openbeam["counts"]) ** 2
                 )
 
         # Construct a dataframe for energy, transmission, and error
-        df = pd.DataFrame({
-            "energy": signal["energy"],
-            "trans": transmission,
-            "err": err
-        })
+        df = pd.DataFrame(
+            {"energy": signal["energy"], "trans": transmission, "err": err}
+        )
 
         # Set the label attribute from the signal file
         df.attrs["label"] = signal.attrs["label"]
@@ -187,7 +199,11 @@ class Data:
         # Store empty signal/openbeam if provided (for proper rebinning)
         # Note: At this point, if background correction was applied, empty_signal
         # and empty_openbeam have been reassigned to DataFrames (line 148-149)
-        if empty_signal is not None and empty_openbeam is not None and isinstance(empty_signal, pd.DataFrame):
+        if (
+            empty_signal is not None
+            and empty_openbeam is not None
+            and isinstance(empty_signal, pd.DataFrame)
+        ):
             self_data.empty_signal = empty_signal
             self_data.empty_openbeam = empty_openbeam
         else:
@@ -239,6 +255,7 @@ class Data:
             Original index form
         """
         import ast
+
         try:
             # Try to parse as Python literal (for tuples and ints)
             parsed = ast.literal_eval(string_idx)
@@ -261,19 +278,23 @@ class Data:
             test_name = os.path.basename(filenames[0])
 
             # Try 2D patterns - look for _x or _y to avoid matching dimension specs like 16x16
-            match_2d = re.search(r'_x(\d+).*_y(\d+)', test_name, re.IGNORECASE)
+            match_2d = re.search(r"_x(\d+).*_y(\d+)", test_name, re.IGNORECASE)
             if not match_2d:
                 # Try without underscores but with word boundaries
-                match_2d = re.search(r'\bx(\d+)[_\s].*\by(\d+)', test_name, re.IGNORECASE)
+                match_2d = re.search(
+                    r"\bx(\d+)[_\s].*\by(\d+)", test_name, re.IGNORECASE
+                )
 
             if match_2d:
                 pattern = "_x{x}_y{y}"
             else:
                 # Try 1D patterns - look for trailing numbers or with keywords
-                match_1d = re.search(r'(?:idx|pixel|det)[_\s]*(\d+)', test_name, re.IGNORECASE)
+                match_1d = re.search(
+                    r"(?:idx|pixel|det)[_\s]*(\d+)", test_name, re.IGNORECASE
+                )
                 if not match_1d:
                     # Try just trailing number before extension
-                    match_1d = re.search(r'_(\d+)\.', test_name)
+                    match_1d = re.search(r"_(\d+)\.", test_name)
 
                 if match_1d:
                     pattern = "idx{i}"
@@ -288,33 +309,43 @@ class Data:
             if "{x}" in pattern and "{y}" in pattern:
                 # 2D grid pattern - try multiple patterns
                 # First try with underscores
-                match = re.search(r'_x(\d+).*_y(\d+)', basename, re.IGNORECASE)
+                match = re.search(r"_x(\d+).*_y(\d+)", basename, re.IGNORECASE)
                 if not match:
                     # Try with word boundaries
-                    match = re.search(r'\bx(\d+)[_\s].*\by(\d+)', basename, re.IGNORECASE)
+                    match = re.search(
+                        r"\bx(\d+)[_\s].*\by(\d+)", basename, re.IGNORECASE
+                    )
                 if not match:
                     # Try simple pattern as last resort
-                    match = re.search(r'(?<![\dx])x(\d+).*(?<![\dx])y(\d+)', basename, re.IGNORECASE)
+                    match = re.search(
+                        r"(?<![\dx])x(\d+).*(?<![\dx])y(\d+)", basename, re.IGNORECASE
+                    )
 
                 if match:
                     x, y = int(match.group(1)), int(match.group(2))
                     indices.append((x, y))
                 else:
-                    raise ValueError(f"Could not extract x,y coordinates from: {basename}. "
-                                   f"Filename should contain _x<num> and _y<num> patterns.")
+                    raise ValueError(
+                        f"Could not extract x,y coordinates from: {basename}. "
+                        f"Filename should contain _x<num> and _y<num> patterns."
+                    )
 
             elif "{i}" in pattern:
                 # 1D array pattern - try multiple approaches
                 # First try with keywords
-                match = re.search(r'(?:idx|pixel|det)[_\s]*(\d+)', basename, re.IGNORECASE)
+                match = re.search(
+                    r"(?:idx|pixel|det)[_\s]*(\d+)", basename, re.IGNORECASE
+                )
                 if not match:
                     # Try trailing number before extension
-                    match = re.search(r'_(\d+)\.', basename)
+                    match = re.search(r"_(\d+)\.", basename)
                 if not match:
                     # Last resort - any number in the filename (rightmost)
-                    matches = re.findall(r'(\d+)', basename)
+                    matches = re.findall(r"(\d+)", basename)
                     if matches:
-                        match = type('obj', (object,), {'group': lambda self, n: matches[-1]})()
+                        match = type(
+                            "obj", (object,), {"group": lambda self, n: matches[-1]}
+                        )()
 
                 if match:
                     indices.append(int(match.group(1)))
@@ -360,19 +391,24 @@ class Data:
     def from_transmission(cls, filename: str):
         """
         Creates a Data object directly from a transmission data file containing energy, transmission, and error values.
-        
+
         Parameters:
         -----------
         filename : str
             Path to the file containing the transmission data (energy, transmission, error) separated by whitespace.
-        
+
         Returns:
         --------
         Data
             A Data object with the transmission data loaded into a dataframe.
         """
-        df = pd.read_csv(filename, names=["energy", "trans", "err"], header=None,
-                         skiprows=0, sep=r"\s+")
+        df = pd.read_csv(
+            filename,
+            names=["energy", "trans", "err"],
+            header=None,
+            skiprows=0,
+            sep=r"\s+",
+        )
 
         # Create Data object and assign the dataframe
         self_data = cls()
@@ -381,8 +417,17 @@ class Data:
         return self_data
 
     @classmethod
-    def from_grouped_arrays(cls, tof, trans, err, L: float, tstep: float,
-                            L0: float = 1.0, t0: float = 0.0, indices: list = None):
+    def from_grouped_arrays(
+        cls,
+        tof,
+        trans,
+        err,
+        L: float,
+        tstep: float,
+        L0: float = 1.0,
+        t0: float = 0.0,
+        indices: list = None,
+    ):
         """
         Creates a Data object from grouped transmission arrays.
 
@@ -431,11 +476,15 @@ class Data:
 
         # Validate shapes
         if trans.ndim != 2 or err.ndim != 2:
-            raise ValueError("trans and err must be 2D arrays (n_groups, n_energy_bins)")
+            raise ValueError(
+                "trans and err must be 2D arrays (n_groups, n_energy_bins)"
+            )
         if trans.shape != err.shape:
             raise ValueError(f"Shape mismatch: trans {trans.shape} vs err {err.shape}")
         if len(tof) != trans.shape[1]:
-            raise ValueError(f"TOF length {len(tof)} doesn't match trans shape {trans.shape}")
+            raise ValueError(
+                f"TOF length {len(tof)} doesn't match trans shape {trans.shape}"
+            )
 
         n_groups, n_energy = trans.shape
 
@@ -443,7 +492,9 @@ class Data:
         if indices is None:
             indices = list(range(n_groups))
         elif len(indices) != n_groups:
-            raise ValueError(f"Number of indices ({len(indices)}) doesn't match number of groups ({n_groups})")
+            raise ValueError(
+                f"Number of indices ({len(indices)}) doesn't match number of groups ({n_groups})"
+            )
 
         # Determine group shape
         group_shape = cls._determine_group_shape(indices)
@@ -466,12 +517,10 @@ class Data:
         # Create groups dictionary
         self_data.groups = {}
         for i, idx in enumerate(indices):
-            table = pd.DataFrame({
-                'energy': energy,
-                'trans': trans[i, :],
-                'err': err[i, :]
-            })
-            table.attrs['label'] = str(idx)
+            table = pd.DataFrame(
+                {"energy": energy, "trans": trans[i, :], "err": err[i, :]}
+            )
+            table.attrs["label"] = str(idx)
             self_data.groups[idx] = table
 
         # Set main table to first group
@@ -480,12 +529,21 @@ class Data:
         return self_data
 
     @classmethod
-    def from_grouped(cls, signal, openbeam,
-                     empty_signal: str = "", empty_openbeam: str = "",
-                     tstep: float = 1.56255e-9, L: float = 10.59,
-                     L0: float = 1.0, t0: float = 0.0,
-                     pattern: str = "auto", indices: list = None, verbosity: int = 1,
-                     n_jobs: int = -1):
+    def from_grouped(
+        cls,
+        signal,
+        openbeam,
+        empty_signal: str = "",
+        empty_openbeam: str = "",
+        tstep: float = 1.56255e-9,
+        L: float = 10.59,
+        L0: float = 1.0,
+        t0: float = 0.0,
+        pattern: str = "auto",
+        indices: list = None,
+        verbosity: int = 1,
+        n_jobs: int = -1,
+    ):
         """
         Creates a Data object from grouped counts data using glob patterns.
 
@@ -536,10 +594,14 @@ class Data:
         >>> data = Data.from_grouped("folder/pixel_*.csv", "folder_ob/pixel_*.csv")
 
         # 1D array with custom indices
-        >>> data = Data.from_grouped("data/det_*.csv", "data_ob/det_*.csv", indices=[0, 1, 2, 3])
+        >>> data = Data.from_grouped(
+        ...     "data/det_*.csv", "data_ob/det_*.csv", indices=[0, 1, 2, 3]
+        ... )
 
         # Named groups
-        >>> data = Data.from_grouped("samples/*.csv", "ref/*.csv", indices=["sample1", "sample2"])
+        >>> data = Data.from_grouped(
+        ...     "samples/*.csv", "ref/*.csv", indices=["sample1", "sample2"]
+        ... )
         """
         import glob
         import os
@@ -560,7 +622,9 @@ class Data:
         if not openbeam_files:
             raise ValueError(f"No files found matching pattern: {openbeam}")
         if len(signal_files) != len(openbeam_files):
-            raise ValueError(f"Mismatch: {len(signal_files)} signal files vs {len(openbeam_files)} openbeam files")
+            raise ValueError(
+                f"Mismatch: {len(signal_files)} signal files vs {len(openbeam_files)} openbeam files"
+            )
 
         # Handle empty beam files if provided
         empty_signal_files = []
@@ -574,7 +638,9 @@ class Data:
             # Allow single empty file to be reused for all groups
             if len(empty_signal_files) == 1 and len(empty_openbeam_files) == 1:
                 use_single_empty = True
-            elif len(empty_signal_files) != len(signal_files) or len(empty_openbeam_files) != len(signal_files):
+            elif len(empty_signal_files) != len(signal_files) or len(
+                empty_openbeam_files
+            ) != len(signal_files):
                 raise ValueError(
                     f"Empty file count mismatch: {len(empty_signal_files)} empty signal, "
                     f"{len(empty_openbeam_files)} empty openbeam vs {len(signal_files)} signal files. "
@@ -589,11 +655,15 @@ class Data:
 
             # User-provided indices
             if len(indices) != len(signal_files):
-                raise ValueError(f"Number of indices ({len(indices)}) must match number of files ({len(signal_files)})")
+                raise ValueError(
+                    f"Number of indices ({len(indices)}) must match number of files ({len(signal_files)})"
+                )
             extracted_indices = indices
         else:
             # Auto-extract from filenames
-            extracted_indices = cls._extract_indices_from_filenames(signal_files, pattern)
+            extracted_indices = cls._extract_indices_from_filenames(
+                signal_files, pattern
+            )
 
         # Determine group dimensionality and shape BEFORE converting to strings
         group_shape, is_2d, is_1d = cls._determine_group_shape(extracted_indices)
@@ -651,7 +721,7 @@ class Data:
                 L=L,
                 L0=L0,
                 t0=t0,
-                verbosity=verbosity
+                verbosity=verbosity,
             )
 
             return idx, group_data.table
@@ -662,8 +732,12 @@ class Data:
             if verbosity >= 1:
                 try:
                     from tqdm.auto import tqdm
-                    iterator = tqdm(enumerate(extracted_indices), total=len(extracted_indices),
-                                   desc=f"Loading {len(extracted_indices)} groups")
+
+                    iterator = tqdm(
+                        enumerate(extracted_indices),
+                        total=len(extracted_indices),
+                        desc=f"Loading {len(extracted_indices)} groups",
+                    )
                 except ImportError:
                     iterator = enumerate(extracted_indices)
             else:
@@ -680,7 +754,11 @@ class Data:
             if verbosity >= 1:
                 try:
                     from tqdm.auto import tqdm
-                    pbar = tqdm(total=len(extracted_indices), desc=f"Loading {len(extracted_indices)} groups")
+
+                    pbar = tqdm(
+                        total=len(extracted_indices),
+                        desc=f"Loading {len(extracted_indices)} groups",
+                    )
                 except ImportError:
                     pbar = None
             else:
@@ -688,7 +766,7 @@ class Data:
 
             # Load groups in parallel using threading backend
             # (threading is appropriate for I/O-bound file loading and avoids serialization issues)
-            results = Parallel(n_jobs=n_jobs, prefer='threads')(
+            results = Parallel(n_jobs=n_jobs, prefer="threads")(
                 delayed(load_single_group)(i, idx)
                 for i, idx in enumerate(extracted_indices)
             )
@@ -741,7 +819,7 @@ class Data:
             The axes of the plot containing the transmission data.
         """
         xlim = kwargs.pop("xlim", (0.5e6, 1e7))
-        ylim = kwargs.pop("ylim", (0., 1.))
+        ylim = kwargs.pop("ylim", (0.0, 1.0))
         ecolor = kwargs.pop("ecolor", "0.8")
         xlabel = kwargs.pop("xlabel", "Energy [eV]")
         ylabel = kwargs.pop("ylabel", "Transmission")
@@ -757,7 +835,9 @@ class Data:
             # Normalize index for lookup (supports tuple, int, or string access)
             normalized_index = self._normalize_index(index)
             if normalized_index not in self.groups:
-                raise ValueError(f"Index {index} not found in groups. Available indices: {self.indices}")
+                raise ValueError(
+                    f"Index {index} not found in groups. Available indices: {self.indices}"
+                )
             table_to_plot = self.groups[normalized_index]
             # Add index to label if not provided
             if plot_label is None:
@@ -769,9 +849,19 @@ class Data:
             table_to_plot = self.table
 
         # Plot the data with error bars
-        ax = table_to_plot.dropna().plot(x="energy", y="trans", yerr="err",
-                                        xlim=xlim, ylim=ylim, logx=logx, ecolor=ecolor,
-                                        xlabel=xlabel, ylabel=ylabel, label=plot_label, **kwargs)
+        ax = table_to_plot.dropna().plot(
+            x="energy",
+            y="trans",
+            yerr="err",
+            xlim=xlim,
+            ylim=ylim,
+            logx=logx,
+            ecolor=ecolor,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            label=plot_label,
+            **kwargs,
+        )
 
         # Add legend if label was set
         if plot_label is not None:
@@ -779,7 +869,17 @@ class Data:
 
         return ax
 
-    def plot_map(self, emin=0.5e6, emax=20e6, emin2=None, emax2=None, logT=False, n_density=None, sigma=None, **kwargs):
+    def plot_map(
+        self,
+        emin=0.5e6,
+        emax=20e6,
+        emin2=None,
+        emax2=None,
+        logT=False,
+        n_density=None,
+        sigma=None,
+        **kwargs,
+    ):
         """
         Plot transmission map averaged over energy range for grouped data.
 
@@ -849,11 +949,15 @@ class Data:
         if logT and (n_density is None or sigma is None):
             raise ValueError("logT=True requires both n_density and sigma parameters")
 
-        if (emin2 is not None or emax2 is not None) and not (emin2 is not None and emax2 is not None):
+        if (emin2 is not None or emax2 is not None) and not (
+            emin2 is not None and emax2 is not None
+        ):
             raise ValueError("Both emin2 and emax2 must be provided together")
 
         if logT and (emin2 is not None or emax2 is not None):
-            raise ValueError("Cannot use both logT and transmission ratio (emin2/emax2) simultaneously")
+            raise ValueError(
+                "Cannot use both logT and transmission ratio (emin2/emax2) simultaneously"
+            )
 
         # Extract kwargs
         cmap = kwargs.pop("cmap", "viridis")
@@ -866,16 +970,16 @@ class Data:
         avg_trans = {}
         for idx in self.indices:
             table = self.groups[idx]
-            mask = (table['energy'] >= emin) & (table['energy'] <= emax)
-            avg_trans[idx] = table.loc[mask, 'trans'].mean()
+            mask = (table["energy"] >= emin) & (table["energy"] <= emax)
+            avg_trans[idx] = table.loc[mask, "trans"].mean()
 
         # Calculate second transmission map if requested (for ratio)
         if emin2 is not None and emax2 is not None:
             avg_trans2 = {}
             for idx in self.indices:
                 table = self.groups[idx]
-                mask = (table['energy'] >= emin2) & (table['energy'] <= emax2)
-                avg_trans2[idx] = table.loc[mask, 'trans'].mean()
+                mask = (table["energy"] >= emin2) & (table["energy"] <= emax2)
+                avg_trans2[idx] = table.loc[mask, "trans"].mean()
 
             # Calculate ratio
             for idx in self.indices:
@@ -936,11 +1040,19 @@ class Data:
                         trans_array[y_map[y], x_map[x]] = avg_trans[idx_str]
 
             fig, ax = plt.subplots(figsize=figsize)
-            im = ax.pcolormesh(x_edges, y_edges, trans_array, cmap=cmap, vmin=vmin, vmax=vmax,
-                              shading='flat', **kwargs)
+            im = ax.pcolormesh(
+                x_edges,
+                y_edges,
+                trans_array,
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                shading="flat",
+                **kwargs,
+            )
             ax.set_xlabel("X coordinate")
             ax.set_ylabel("Y coordinate")
-            ax.set_aspect('equal')
+            ax.set_aspect("equal")
 
             # Set appropriate title and colorbar label based on mode
             if title is None:
@@ -964,11 +1076,13 @@ class Data:
 
         if self.group_shape and len(self.group_shape) == 1:
             # 1D line plot - parse string indices back to integers
-            indices_array = np.array([self._parse_string_index(idx) for idx in self.indices])
+            indices_array = np.array(
+                [self._parse_string_index(idx) for idx in self.indices]
+            )
             trans_values = np.array([avg_trans[idx] for idx in self.indices])
 
             fig, ax = plt.subplots(figsize=figsize)
-            ax.plot(indices_array, trans_values, 'o-', **kwargs)
+            ax.plot(indices_array, trans_values, "o-", **kwargs)
             ax.set_xlabel("Pixel index")
 
             # Set appropriate ylabel and title based on mode
@@ -996,7 +1110,7 @@ class Data:
 
         ax.bar(positions, trans_values, **kwargs)
         ax.set_xticks(positions)
-        ax.set_xticklabels(self.indices, rotation=45, ha='right')
+        ax.set_xticklabels(self.indices, rotation=45, ha="right")
 
         # Set appropriate ylabel and title based on mode
         if logT:
@@ -1080,17 +1194,25 @@ class Data:
         """
         # Validate input
         if n is None and tstep is None:
-            raise ValueError("Must specify either 'n' (number of bins to combine) or 'tstep' (new time step)")
+            raise ValueError(
+                "Must specify either 'n' (number of bins to combine) or 'tstep' (new time step)"
+            )
         if n is not None and tstep is not None:
-            raise ValueError("Cannot specify both 'n' and 'tstep'. Choose one rebinning method.")
+            raise ValueError(
+                "Cannot specify both 'n' and 'tstep'. Choose one rebinning method."
+            )
 
         # Check that we have original counts data
         if not self.is_grouped and (self.signal is None or self.openbeam is None):
-            raise ValueError("Cannot rebin: original counts data (signal/openbeam) not available. "
-                           "This Data object was likely created from transmission files.")
+            raise ValueError(
+                "Cannot rebin: original counts data (signal/openbeam) not available. "
+                "This Data object was likely created from transmission files."
+            )
 
         # Helper function to rebin a single counts DataFrame
-        def rebin_counts_dataframe(df, n_bins=None, new_tstep=None, old_tstep=None, L=None):
+        def rebin_counts_dataframe(
+            df, n_bins=None, new_tstep=None, old_tstep=None, L=None
+        ):
             """
             Rebin a counts DataFrame (tof, counts, err).
 
@@ -1122,12 +1244,14 @@ class Data:
                     n_new = n_original // n_bins
 
                     # Truncate to make evenly divisible
-                    df_truncated = df.iloc[:n_new * n_bins].copy()
+                    df_truncated = df.iloc[: n_new * n_bins].copy()
 
                     # Reshape and sum
-                    tof_reshaped = df_truncated['tof'].values.reshape(n_new, n_bins)
-                    counts_reshaped = df_truncated['counts'].values.reshape(n_new, n_bins)
-                    err_reshaped = df_truncated['err'].values.reshape(n_new, n_bins)
+                    tof_reshaped = df_truncated["tof"].values.reshape(n_new, n_bins)
+                    counts_reshaped = df_truncated["counts"].values.reshape(
+                        n_new, n_bins
+                    )
+                    err_reshaped = df_truncated["err"].values.reshape(n_new, n_bins)
 
                     # New tof is the CENTER of each combined bin
                     # For bins [i, i+1, ..., i+n-1], the center is at (i + i+n-1 + 1) / 2
@@ -1138,11 +1262,9 @@ class Data:
                     # Combine errors in quadrature
                     new_err = np.sqrt((err_reshaped**2).sum(axis=1))
 
-                    rebinned_df = pd.DataFrame({
-                        'tof': new_tof,
-                        'counts': new_counts,
-                        'err': new_err
-                    })
+                    rebinned_df = pd.DataFrame(
+                        {"tof": new_tof, "counts": new_counts, "err": new_err}
+                    )
 
             else:
                 # Interpolation method: new tstep
@@ -1154,7 +1276,7 @@ class Data:
                     from scipy.interpolate import interp1d
 
                     # Original tof grid in time units (seconds)
-                    old_tof_time = df['tof'].values * old_tstep
+                    old_tof_time = df["tof"].values * old_tstep
 
                     # Create new tof grid with linear spacing
                     tof_min = old_tof_time.min()
@@ -1164,10 +1286,20 @@ class Data:
 
                     # Interpolate counts and errors
                     # For counts: linear interpolation (represents count rate)
-                    counts_interp = interp1d(old_tof_time, df['counts'].values,
-                                            kind='linear', fill_value=0, bounds_error=False)
-                    err_interp = interp1d(old_tof_time, df['err'].values,
-                                         kind='linear', fill_value=0, bounds_error=False)
+                    counts_interp = interp1d(
+                        old_tof_time,
+                        df["counts"].values,
+                        kind="linear",
+                        fill_value=0,
+                        bounds_error=False,
+                    )
+                    err_interp = interp1d(
+                        old_tof_time,
+                        df["err"].values,
+                        kind="linear",
+                        fill_value=0,
+                        bounds_error=False,
+                    )
 
                     new_counts = counts_interp(new_tof_time)
                     new_err = err_interp(new_tof_time)
@@ -1180,55 +1312,59 @@ class Data:
                     # Convert back to bin indices (bin centers)
                     new_tof = new_tof_time / new_tstep
 
-                    rebinned_df = pd.DataFrame({
-                        'tof': new_tof,
-                        'counts': new_counts,
-                        'err': new_err
-                    })
+                    rebinned_df = pd.DataFrame(
+                        {"tof": new_tof, "counts": new_counts, "err": new_err}
+                    )
 
             # Preserve label attribute if present
-            if hasattr(df, 'attrs') and 'label' in df.attrs:
-                rebinned_df.attrs['label'] = df.attrs['label']
+            if hasattr(df, "attrs") and "label" in df.attrs:
+                rebinned_df.attrs["label"] = df.attrs["label"]
 
             return rebinned_df
 
         # Helper function to calculate transmission from rebinned counts
-        def calculate_transmission(signal_df, openbeam_df, new_tstep_val, L_val,
-                                   empty_signal_df=None, empty_openbeam_df=None):
+        def calculate_transmission(
+            signal_df,
+            openbeam_df,
+            new_tstep_val,
+            L_val,
+            empty_signal_df=None,
+            empty_openbeam_df=None,
+        ):
             """Calculate transmission and energy from rebinned signal and openbeam."""
             # Convert tof to energy
-            energy = utils.time2energy(signal_df['tof'].values * new_tstep_val, L_val)
+            energy = utils.time2energy(signal_df["tof"].values * new_tstep_val, L_val)
 
             # Calculate transmission
-            transmission = signal_df['counts'] / openbeam_df['counts']
+            transmission = signal_df["counts"] / openbeam_df["counts"]
 
             # Calculate transmission error
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 if empty_signal_df is not None and empty_openbeam_df is not None:
                     # Apply background correction
-                    transmission *= empty_openbeam_df['counts'] / empty_signal_df['counts']
+                    transmission *= (
+                        empty_openbeam_df["counts"] / empty_signal_df["counts"]
+                    )
                     trans_err = transmission * np.sqrt(
-                        (signal_df['err'] / signal_df['counts'])**2 +
-                        (openbeam_df['err'] / openbeam_df['counts'])**2 +
-                        (empty_signal_df['err'] / empty_signal_df['counts'])**2 +
-                        (empty_openbeam_df['err'] / empty_openbeam_df['counts'])**2
+                        (signal_df["err"] / signal_df["counts"]) ** 2
+                        + (openbeam_df["err"] / openbeam_df["counts"]) ** 2
+                        + (empty_signal_df["err"] / empty_signal_df["counts"]) ** 2
+                        + (empty_openbeam_df["err"] / empty_openbeam_df["counts"]) ** 2
                     )
                 else:
                     trans_err = transmission * np.sqrt(
-                        (signal_df['err'] / signal_df['counts'])**2 +
-                        (openbeam_df['err'] / openbeam_df['counts'])**2
+                        (signal_df["err"] / signal_df["counts"]) ** 2
+                        + (openbeam_df["err"] / openbeam_df["counts"]) ** 2
                     )
 
-            table_df = pd.DataFrame({
-                'energy': energy,
-                'trans': transmission,
-                'err': trans_err
-            })
+            table_df = pd.DataFrame(
+                {"energy": energy, "trans": transmission, "err": trans_err}
+            )
 
             # Preserve label if present
-            if hasattr(signal_df, 'attrs') and 'label' in signal_df.attrs:
-                table_df.attrs['label'] = signal_df.attrs['label']
+            if hasattr(signal_df, "attrs") and "label" in signal_df.attrs:
+                table_df.attrs["label"] = signal_df.attrs["label"]
 
             return table_df
 
@@ -1247,9 +1383,9 @@ class Data:
         new_data.is_grouped = self.is_grouped
 
         # Copy L0 and t0 if they exist
-        if hasattr(self, 'L0'):
+        if hasattr(self, "L0"):
             new_data.L0 = self.L0
-        if hasattr(self, 't0'):
+        if hasattr(self, "t0"):
             new_data.t0 = self.t0
 
         if self.is_grouped:
@@ -1260,7 +1396,13 @@ class Data:
 
             # For grouped data, we rebin the transmission tables directly
             # This is done by interpolating onto a new energy grid
-            def rebin_transmission_table(table_df, n_bins=None, new_tstep_val=None, old_tstep_val=None, L_val=None):
+            def rebin_transmission_table(
+                table_df,
+                n_bins=None,
+                new_tstep_val=None,
+                old_tstep_val=None,
+                L_val=None,
+            ):
                 """
                 Rebin a transmission table (energy, trans, err) for grouped data.
 
@@ -1275,15 +1417,11 @@ class Data:
 
                     # Remove NaN values before binning
                     # NaN values don't contribute to fits, so it's safe to exclude them
-                    clean_table = table_df.dropna(subset=['energy', 'trans', 'err'])
+                    clean_table = table_df.dropna(subset=["energy", "trans", "err"])
 
                     if len(clean_table) == 0:
                         # If all data is NaN, return empty table with same structure
-                        return pd.DataFrame({
-                            'energy': [],
-                            'trans': [],
-                            'err': []
-                        })
+                        return pd.DataFrame({"energy": [], "trans": [], "err": []})
 
                     n_original = len(clean_table)
                     n_new = n_original // n_bins
@@ -1293,12 +1431,16 @@ class Data:
                         return clean_table.copy()
 
                     # Truncate to make evenly divisible
-                    table_truncated = clean_table.iloc[:n_new * n_bins].copy()
+                    table_truncated = clean_table.iloc[: n_new * n_bins].copy()
 
                     # Reshape and average (for transmission, we average not sum)
-                    energy_reshaped = table_truncated['energy'].values.reshape(n_new, n_bins)
-                    trans_reshaped = table_truncated['trans'].values.reshape(n_new, n_bins)
-                    err_reshaped = table_truncated['err'].values.reshape(n_new, n_bins)
+                    energy_reshaped = table_truncated["energy"].values.reshape(
+                        n_new, n_bins
+                    )
+                    trans_reshaped = table_truncated["trans"].values.reshape(
+                        n_new, n_bins
+                    )
+                    err_reshaped = table_truncated["err"].values.reshape(n_new, n_bins)
 
                     # Use arithmetic mean for energy (centers of rebinned energy bins)
                     # nanmean to handle any remaining NaNs in the reshaped arrays
@@ -1309,14 +1451,14 @@ class Data:
                     # Use nansum to skip NaN values in error combination
                     new_err = np.sqrt(np.nansum(err_reshaped**2, axis=1)) / n_bins
 
-                    rebinned_table = pd.DataFrame({
-                        'energy': new_energy,
-                        'trans': new_trans,
-                        'err': new_err
-                    })
+                    rebinned_table = pd.DataFrame(
+                        {"energy": new_energy, "trans": new_trans, "err": new_err}
+                    )
 
                     # Remove any remaining NaN rows created by nanmean of all-NaN bins
-                    rebinned_table = rebinned_table.dropna(subset=['energy', 'trans', 'err'])
+                    rebinned_table = rebinned_table.dropna(
+                        subset=["energy", "trans", "err"]
+                    )
 
                 else:
                     # Interpolation method: new tstep
@@ -1324,18 +1466,14 @@ class Data:
 
                     # Remove NaN values before rebinning
                     # NaN values don't contribute to fits, so it's safe to exclude them
-                    clean_table = table_df.dropna(subset=['energy', 'trans', 'err'])
+                    clean_table = table_df.dropna(subset=["energy", "trans", "err"])
 
                     if len(clean_table) == 0:
                         # If all data is NaN, return empty table with same structure
-                        return pd.DataFrame({
-                            'energy': [],
-                            'trans': [],
-                            'err': []
-                        })
+                        return pd.DataFrame({"energy": [], "trans": [], "err": []})
 
                     # Current energy grid (without NaNs)
-                    old_energy = clean_table['energy'].values
+                    old_energy = clean_table["energy"].values
 
                     # Create new energy grid based on new tstep
                     # Convert energy back to TOF, apply new tstep, convert back
@@ -1353,27 +1491,37 @@ class Data:
 
                     # Interpolate transmission and error
                     # Use bounds_error=False with fill_value=nan to avoid extrapolating into NaN regions
-                    trans_interp = interp1d(old_energy, clean_table['trans'].values,
-                                           kind='linear', fill_value=np.nan, bounds_error=False)
-                    err_interp = interp1d(old_energy, clean_table['err'].values,
-                                         kind='linear', fill_value=np.nan, bounds_error=False)
+                    trans_interp = interp1d(
+                        old_energy,
+                        clean_table["trans"].values,
+                        kind="linear",
+                        fill_value=np.nan,
+                        bounds_error=False,
+                    )
+                    err_interp = interp1d(
+                        old_energy,
+                        clean_table["err"].values,
+                        kind="linear",
+                        fill_value=np.nan,
+                        bounds_error=False,
+                    )
 
                     new_trans = trans_interp(new_energy)
                     new_err = err_interp(new_energy)
 
                     # Create rebinned table
-                    rebinned_table = pd.DataFrame({
-                        'energy': new_energy,
-                        'trans': new_trans,
-                        'err': new_err
-                    })
+                    rebinned_table = pd.DataFrame(
+                        {"energy": new_energy, "trans": new_trans, "err": new_err}
+                    )
 
                     # Remove any NaN rows that may have been created during interpolation
-                    rebinned_table = rebinned_table.dropna(subset=['energy', 'trans', 'err'])
+                    rebinned_table = rebinned_table.dropna(
+                        subset=["energy", "trans", "err"]
+                    )
 
                 # Preserve label if present
-                if hasattr(table_df, 'attrs') and 'label' in table_df.attrs:
-                    rebinned_table.attrs['label'] = table_df.attrs['label']
+                if hasattr(table_df, "attrs") and "label" in table_df.attrs:
+                    rebinned_table.attrs["label"] = table_df.attrs["label"]
 
                 return rebinned_table
 
@@ -1381,8 +1529,11 @@ class Data:
             for idx in self.indices:
                 group_table = self.groups[idx]
                 rebinned_table = rebin_transmission_table(
-                    group_table, n_bins=n, new_tstep_val=tstep,
-                    old_tstep_val=self.tstep, L_val=self.L
+                    group_table,
+                    n_bins=n,
+                    new_tstep_val=tstep,
+                    old_tstep_val=self.tstep,
+                    L_val=self.L,
                 )
                 new_data.groups[idx] = rebinned_table
 
@@ -1401,8 +1552,12 @@ class Data:
                     group_len = len(new_data.groups[idx])
                     if group_len > 0:
                         # Handle case where this group might have different length
-                        new_trans_array[i, :min(group_len, n_energy)] = new_data.groups[idx]['trans'].values[:n_energy]
-                        new_err_array[i, :min(group_len, n_energy)] = new_data.groups[idx]['err'].values[:n_energy]
+                        new_trans_array[i, : min(group_len, n_energy)] = (
+                            new_data.groups[idx]["trans"].values[:n_energy]
+                        )
+                        new_err_array[i, : min(group_len, n_energy)] = new_data.groups[
+                            idx
+                        ]["err"].values[:n_energy]
                     else:
                         # Empty group - fill with NaN
                         new_trans_array[i, :] = np.nan
@@ -1418,39 +1573,46 @@ class Data:
         else:
             # Rebin non-grouped data
             rebinned_signal = rebin_counts_dataframe(
-                self.signal, n_bins=n, new_tstep=tstep,
-                old_tstep=self.tstep, L=self.L
+                self.signal, n_bins=n, new_tstep=tstep, old_tstep=self.tstep, L=self.L
             )
             rebinned_openbeam = rebin_counts_dataframe(
-                self.openbeam, n_bins=n, new_tstep=tstep,
-                old_tstep=self.tstep, L=self.L
+                self.openbeam, n_bins=n, new_tstep=tstep, old_tstep=self.tstep, L=self.L
             )
 
             # Rebin empty data if it exists (for background correction)
             rebinned_empty_signal = None
             rebinned_empty_openbeam = None
-            if hasattr(self, 'empty_signal') and self.empty_signal is not None:
+            if hasattr(self, "empty_signal") and self.empty_signal is not None:
                 rebinned_empty_signal = rebin_counts_dataframe(
-                    self.empty_signal, n_bins=n, new_tstep=tstep,
-                    old_tstep=self.tstep, L=self.L
+                    self.empty_signal,
+                    n_bins=n,
+                    new_tstep=tstep,
+                    old_tstep=self.tstep,
+                    L=self.L,
                 )
-            if hasattr(self, 'empty_openbeam') and self.empty_openbeam is not None:
+            if hasattr(self, "empty_openbeam") and self.empty_openbeam is not None:
                 rebinned_empty_openbeam = rebin_counts_dataframe(
-                    self.empty_openbeam, n_bins=n, new_tstep=tstep,
-                    old_tstep=self.tstep, L=self.L
+                    self.empty_openbeam,
+                    n_bins=n,
+                    new_tstep=tstep,
+                    old_tstep=self.tstep,
+                    L=self.L,
                 )
 
             # Calculate transmission table
             new_table = calculate_transmission(
-                rebinned_signal, rebinned_openbeam,
-                new_tstep, self.L,
-                rebinned_empty_signal, rebinned_empty_openbeam
+                rebinned_signal,
+                rebinned_openbeam,
+                new_tstep,
+                self.L,
+                rebinned_empty_signal,
+                rebinned_empty_openbeam,
             )
 
             new_data.signal = rebinned_signal
             new_data.openbeam = rebinned_openbeam
             new_data.table = new_table
-            new_data.tgrid = rebinned_signal['tof']
+            new_data.tgrid = rebinned_signal["tof"]
 
             # Store rebinned empty data
             new_data.empty_signal = rebinned_empty_signal

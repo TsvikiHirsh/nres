@@ -95,10 +95,10 @@ You can allow certain parameters to vary during fitting:
 
 .. code-block:: python
 
-   model = TransmissionModel(xs, 
-                             vary_weights=True, 
-                             vary_tof=True, 
-                             vary_background=True, 
+   model = TransmissionModel(xs,
+                             vary_weights=True,
+                             vary_tof=True,
+                             vary_background=True,
                              vary_response=True)
 
    # Fit with varying parameters

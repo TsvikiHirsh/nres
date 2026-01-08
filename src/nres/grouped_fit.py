@@ -6,12 +6,15 @@ fit results from grouped/spatially-resolved data, along with helper functions
 for parallel fitting.
 """
 
-import lmfit
-import numpy as np
-import matplotlib.pyplot as plt
-from typing import Optional, TYPE_CHECKING
-import json
+from __future__ import annotations
+
 import ast
+import json
+from typing import TYPE_CHECKING, Optional
+
+import lmfit
+import matplotlib.pyplot as plt
+import numpy as np
 
 if TYPE_CHECKING:
     from nres.models import TransmissionModel
@@ -40,9 +43,10 @@ def _fit_single_group_worker(args):
 
     try:
         # Reconstruct model from dict
-        from nres.models import TransmissionModel
-        from nres.data import Data
         import pandas as pd
+
+        from nres.data import Data
+        from nres.models import TransmissionModel
 
         model = TransmissionModel._from_dict(model_dict)
 
@@ -62,8 +66,9 @@ def _fit_single_group_worker(args):
 
     except Exception as e:
         import traceback
-        error_msg = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
-        return idx, {'error': error_msg}
+
+        error_msg = f"{type(e).__name__}: {e!s}\n{traceback.format_exc()}"
+        return idx, {"error": error_msg}
 
 
 def _extract_pickleable_result(fit_result):
@@ -76,56 +81,69 @@ def _extract_pickleable_result(fit_result):
     result_dict = {}
 
     # Core fit statistics
-    for attr in ['success', 'chisqr', 'redchi', 'aic', 'bic',
-                 'nvarys', 'ndata', 'nfev', 'message', 'method']:
+    for attr in [
+        "success",
+        "chisqr",
+        "redchi",
+        "aic",
+        "bic",
+        "nvarys",
+        "ndata",
+        "nfev",
+        "message",
+        "method",
+    ]:
         if hasattr(fit_result, attr):
             result_dict[attr] = getattr(fit_result, attr)
 
     # Parameters - serialize to JSON string
-    if hasattr(fit_result, 'params'):
-        result_dict['params_json'] = fit_result.params.dumps()
+    if hasattr(fit_result, "params"):
+        result_dict["params_json"] = fit_result.params.dumps()
 
     # Best fit values
-    if hasattr(fit_result, 'best_values'):
-        result_dict['best_values'] = dict(fit_result.best_values)
+    if hasattr(fit_result, "best_values"):
+        result_dict["best_values"] = dict(fit_result.best_values)
 
     # Init values
-    if hasattr(fit_result, 'init_values'):
-        result_dict['init_values'] = dict(fit_result.init_values)
+    if hasattr(fit_result, "init_values"):
+        result_dict["init_values"] = dict(fit_result.init_values)
 
     # Residual and best_fit arrays
-    if hasattr(fit_result, 'residual') and fit_result.residual is not None:
-        result_dict['residual'] = fit_result.residual.tolist()
-    if hasattr(fit_result, 'best_fit') and fit_result.best_fit is not None:
-        result_dict['best_fit'] = fit_result.best_fit.tolist()
+    if hasattr(fit_result, "residual") and fit_result.residual is not None:
+        result_dict["residual"] = fit_result.residual.tolist()
+    if hasattr(fit_result, "best_fit") and fit_result.best_fit is not None:
+        result_dict["best_fit"] = fit_result.best_fit.tolist()
 
     # Covariance matrix
-    if hasattr(fit_result, 'covar') and fit_result.covar is not None:
-        result_dict['covar'] = fit_result.covar.tolist()
+    if hasattr(fit_result, "covar") and fit_result.covar is not None:
+        result_dict["covar"] = fit_result.covar.tolist()
 
     # Variable names and init_vals
-    if hasattr(fit_result, 'var_names'):
-        result_dict['var_names'] = list(fit_result.var_names)
-    if hasattr(fit_result, 'init_vals'):
-        result_dict['init_vals'] = list(fit_result.init_vals)
+    if hasattr(fit_result, "var_names"):
+        result_dict["var_names"] = list(fit_result.var_names)
+    if hasattr(fit_result, "init_vals"):
+        result_dict["init_vals"] = list(fit_result.init_vals)
 
     # User keywords (needed for plotting)
-    if hasattr(fit_result, 'userkws') and fit_result.userkws:
-        result_dict['userkws'] = dict(fit_result.userkws)
+    if hasattr(fit_result, "userkws") and fit_result.userkws:
+        result_dict["userkws"] = dict(fit_result.userkws)
 
     # Data array (needed for plotting)
-    if hasattr(fit_result, 'data') and fit_result.data is not None:
-        result_dict['data'] = fit_result.data.tolist()
+    if hasattr(fit_result, "data") and fit_result.data is not None:
+        result_dict["data"] = fit_result.data.tolist()
 
     # Weights array (needed for plotting)
-    if hasattr(fit_result, 'weights') and fit_result.weights is not None:
-        result_dict['weights'] = fit_result.weights.tolist()
+    if hasattr(fit_result, "weights") and fit_result.weights is not None:
+        result_dict["weights"] = fit_result.weights.tolist()
 
     # Stage results if present (for rietveld/staged fits)
-    if hasattr(fit_result, 'stages_summary') and fit_result.stages_summary is not None:
+    if hasattr(fit_result, "stages_summary") and fit_result.stages_summary is not None:
         import pandas as pd
+
         if isinstance(fit_result.stages_summary, pd.DataFrame):
-            result_dict['stages_summary'] = fit_result.stages_summary.to_json(orient='split')
+            result_dict["stages_summary"] = fit_result.stages_summary.to_json(
+                orient="split"
+            )
 
     return result_dict
 
@@ -137,61 +155,75 @@ def _reconstruct_result_from_dict(result_dict, model=None):
     This creates an object with the same interface as lmfit.ModelResult
     but from serialized data.
     """
-    import lmfit
-    import numpy as np
-
     # Create a minimal result object using SimpleNamespace
     from types import SimpleNamespace
+
+    import numpy as np
+
     result = SimpleNamespace()
 
     # Restore basic attributes
-    for attr in ['success', 'chisqr', 'redchi', 'aic', 'bic',
-                 'nvarys', 'ndata', 'nfev', 'message', 'method']:
+    for attr in [
+        "success",
+        "chisqr",
+        "redchi",
+        "aic",
+        "bic",
+        "nvarys",
+        "ndata",
+        "nfev",
+        "message",
+        "method",
+    ]:
         if attr in result_dict:
             setattr(result, attr, result_dict[attr])
 
     # Restore parameters
-    if 'params_json' in result_dict:
+    if "params_json" in result_dict:
         result.params = lmfit.Parameters()
-        result.params.loads(result_dict['params_json'])
+        result.params.loads(result_dict["params_json"])
 
     # Restore best values and init values
-    if 'best_values' in result_dict:
-        result.best_values = result_dict['best_values']
-    if 'init_values' in result_dict:
-        result.init_values = result_dict['init_values']
+    if "best_values" in result_dict:
+        result.best_values = result_dict["best_values"]
+    if "init_values" in result_dict:
+        result.init_values = result_dict["init_values"]
 
     # Restore arrays
-    if 'residual' in result_dict:
-        result.residual = np.array(result_dict['residual'])
-    if 'best_fit' in result_dict:
-        result.best_fit = np.array(result_dict['best_fit'])
-    if 'covar' in result_dict:
-        result.covar = np.array(result_dict['covar'])
+    if "residual" in result_dict:
+        result.residual = np.array(result_dict["residual"])
+    if "best_fit" in result_dict:
+        result.best_fit = np.array(result_dict["best_fit"])
+    if "covar" in result_dict:
+        result.covar = np.array(result_dict["covar"])
 
     # Restore variable info
-    if 'var_names' in result_dict:
-        result.var_names = result_dict['var_names']
-    if 'init_vals' in result_dict:
-        result.init_vals = result_dict['init_vals']
+    if "var_names" in result_dict:
+        result.var_names = result_dict["var_names"]
+    if "init_vals" in result_dict:
+        result.init_vals = result_dict["init_vals"]
 
     # Restore userkws (needed for plotting)
-    if 'userkws' in result_dict:
-        result.userkws = result_dict['userkws']
+    if "userkws" in result_dict:
+        result.userkws = result_dict["userkws"]
 
     # Restore data (needed for plotting)
-    if 'data' in result_dict:
-        result.data = np.array(result_dict['data'])
+    if "data" in result_dict:
+        result.data = np.array(result_dict["data"])
 
     # Restore weights (needed for plotting)
-    if 'weights' in result_dict:
-        result.weights = np.array(result_dict['weights'])
+    if "weights" in result_dict:
+        result.weights = np.array(result_dict["weights"])
 
     # Restore stages_summary if available
-    if 'stages_summary' in result_dict and result_dict['stages_summary'] is not None:
-        import pandas as pd
+    if "stages_summary" in result_dict and result_dict["stages_summary"] is not None:
         from io import StringIO
-        result.stages_summary = pd.read_json(StringIO(result_dict['stages_summary']), orient='split')
+
+        import pandas as pd
+
+        result.stages_summary = pd.read_json(
+            StringIO(result_dict["stages_summary"]), orient="split"
+        )
 
     # Add model reference if provided
     result.model = model
@@ -297,7 +329,9 @@ class GroupedFitResult:
         normalized_index = self._normalize_index(index)
 
         if normalized_index not in self.results:
-            raise KeyError(f"Index {index} not found in results. Available: {self.indices}")
+            raise KeyError(
+                f"Index {index} not found in results. Available: {self.indices}"
+            )
         return self.results[normalized_index]
 
     def __len__(self):
@@ -333,16 +367,21 @@ class GroupedFitResult:
         normalized_index = self._normalize_index(index)
 
         if normalized_index not in self.results:
-            raise ValueError(f"Index {index} not found. Available indices: {self.indices}")
+            raise ValueError(
+                f"Index {index} not found. Available indices: {self.indices}"
+            )
 
         # Get the individual fit result
         fit_result = self.results[normalized_index]
 
         # Check if this is a proper ModelResult or a SimpleNamespace (from loaded file)
         from types import SimpleNamespace
-        if isinstance(fit_result, SimpleNamespace) or not hasattr(fit_result, 'userkws'):
+
+        if isinstance(fit_result, SimpleNamespace) or not hasattr(
+            fit_result, "userkws"
+        ):
             # Try to get the model from the result
-            model = getattr(fit_result, 'model', None)
+            model = getattr(fit_result, "model", None)
 
             # If no model available, raise an error
             if model is None:
@@ -352,14 +391,14 @@ class GroupedFitResult:
 
             # We have a model but missing userkws - this is an old saved file
             # Create empty userkws to allow plotting
-            if not hasattr(fit_result, 'userkws'):
+            if not hasattr(fit_result, "userkws"):
                 fit_result.userkws = {}
 
         # Call the model's plot method but temporarily set fit_result to the correct one
         # This is needed because ModelResult.plot() delegates to Model.plot() where
         # self is the shared Model instance, not the individual ModelResult
         model = fit_result.model
-        original_fit_result = getattr(model, 'fit_result', None)
+        original_fit_result = getattr(model, "fit_result", None)
         try:
             model.fit_result = fit_result
             return model.plot(stage=stage, **kwargs)
@@ -367,8 +406,8 @@ class GroupedFitResult:
             # Restore original fit_result
             if original_fit_result is not None:
                 model.fit_result = original_fit_result
-            elif hasattr(model, 'fit_result'):
-                delattr(model, 'fit_result')
+            elif hasattr(model, "fit_result"):
+                delattr(model, "fit_result")
 
     def plot_total_xs(self, index, stage=None, **kwargs):
         """
@@ -403,14 +442,16 @@ class GroupedFitResult:
         normalized_index = self._normalize_index(index)
 
         if normalized_index not in self.results:
-            raise ValueError(f"Index {index} not found. Available indices: {self.indices}")
+            raise ValueError(
+                f"Index {index} not found. Available indices: {self.indices}"
+            )
 
         # Get the individual fit result
         fit_result = self.results[normalized_index]
 
         # Get the model and cross-section
-        model = getattr(fit_result, 'model', None)
-        if model is None or not hasattr(model, 'cross_section'):
+        model = getattr(fit_result, "model", None)
+        if model is None or not hasattr(model, "cross_section"):
             raise AttributeError(
                 f"Cannot plot cross section for index {index}: model or cross section not available."
             )
@@ -418,10 +459,14 @@ class GroupedFitResult:
         # If stage is specified, update cross-section weights from that stage
         if stage is not None:
             if not hasattr(model, "fit_stages") or not model.fit_stages:
-                raise ValueError("No Rietveld stages available. Perform Rietveld fit first.")
+                raise ValueError(
+                    "No Rietveld stages available. Perform Rietveld fit first."
+                )
 
             if stage < 1 or stage > len(model.fit_stages):
-                raise ValueError(f"Stage {stage} not available. Available stages: 1-{len(model.fit_stages)}")
+                raise ValueError(
+                    f"Stage {stage} not available. Available stages: 1-{len(model.fit_stages)}"
+                )
 
             # Get stage parameters
             stage_result = model.fit_stages[stage - 1]  # Convert to 0-indexed
@@ -453,20 +498,22 @@ class GroupedFitResult:
         for idx in self.indices:
             result = self.results[idx]
             row = {
-                'index': str(idx),
-                'success': result.success if hasattr(result, 'success') else None,
-                'redchi': result.redchi if hasattr(result, 'redchi') else None,
-                'chisqr': result.chisqr if hasattr(result, 'chisqr') else None,
-                'nfev': result.nfev if hasattr(result, 'nfev') else None,
-                'nvarys': result.nvarys if hasattr(result, 'nvarys') else None,
+                "index": str(idx),
+                "success": result.success if hasattr(result, "success") else None,
+                "redchi": result.redchi if hasattr(result, "redchi") else None,
+                "chisqr": result.chisqr if hasattr(result, "chisqr") else None,
+                "nfev": result.nfev if hasattr(result, "nfev") else None,
+                "nvarys": result.nvarys if hasattr(result, "nvarys") else None,
             }
 
             # Add all parameter values and errors
-            if hasattr(result, 'params'):
+            if hasattr(result, "params"):
                 for param_name in result.params:
                     param = result.params[param_name]
                     row[param_name] = param.value
-                    row[f"{param_name}_err"] = param.stderr if param.stderr is not None else np.nan
+                    row[f"{param_name}_err"] = (
+                        param.stderr if param.stderr is not None else np.nan
+                    )
 
             summary_data.append(row)
 
@@ -507,8 +554,9 @@ class GroupedFitResult:
 
         # Try to detect if we're in a Jupyter environment
         try:
-            from IPython.display import HTML, display
             from IPython import get_ipython
+            from IPython.display import HTML, display
+
             if get_ipython() is not None:
                 # We're in IPython/Jupyter - display the HTML
                 display(HTML(html))
@@ -521,20 +569,22 @@ class GroupedFitResult:
         for idx in self.indices:
             result = self.results[idx]
             row = {
-                'index': str(idx),
-                'success': result.success if hasattr(result, 'success') else None,
-                'redchi': result.redchi if hasattr(result, 'redchi') else None,
-                'chisqr': result.chisqr if hasattr(result, 'chisqr') else None,
-                'nfev': result.nfev if hasattr(result, 'nfev') else None,
-                'nvarys': result.nvarys if hasattr(result, 'nvarys') else None,
+                "index": str(idx),
+                "success": result.success if hasattr(result, "success") else None,
+                "redchi": result.redchi if hasattr(result, "redchi") else None,
+                "chisqr": result.chisqr if hasattr(result, "chisqr") else None,
+                "nfev": result.nfev if hasattr(result, "nfev") else None,
+                "nvarys": result.nvarys if hasattr(result, "nvarys") else None,
             }
 
             # Add all parameter values and errors
-            if hasattr(result, 'params'):
+            if hasattr(result, "params"):
                 for param_name in result.params:
                     param = result.params[param_name]
                     row[param_name] = param.value
-                    row[f"{param_name}_err"] = param.stderr if param.stderr is not None else np.nan
+                    row[f"{param_name}_err"] = (
+                        param.stderr if param.stderr is not None else np.nan
+                    )
 
             summary_data.append(row)
 
@@ -574,52 +624,61 @@ class GroupedFitResult:
 
         normalized_index = self._normalize_index(index)
         if normalized_index not in self.results:
-            raise ValueError(f"Index {index} not found. Available indices: {self.indices}")
+            raise ValueError(
+                f"Index {index} not found. Available indices: {self.indices}"
+            )
 
         fit_result = self.results[normalized_index]
 
         # Check if it's a proper ModelResult or a SimpleNamespace
-        if hasattr(fit_result, '_repr_html_'):
+        if hasattr(fit_result, "_repr_html_"):
             html = fit_result._repr_html_()
         else:
             # If it's a SimpleNamespace (from loaded file), create a basic HTML report
             html = '<div style="max-width: 900px;">\n'
-            html += f'<h3>Fit Report for Index: {index}</h3>\n'
+            html += f"<h3>Fit Report for Index: {index}</h3>\n"
 
             # Parameters table
-            if hasattr(fit_result, 'params'):
-                html += '<h4>Parameters:</h4>\n'
+            if hasattr(fit_result, "params"):
+                html += "<h4>Parameters:</h4>\n"
                 param_data = []
                 for pname, param in fit_result.params.items():
-                    if hasattr(param, 'value'):
-                        param_data.append({
-                            'Parameter': pname,
-                            'Value': f"{param.value:.6g}",
-                            'Std Error': f"{param.stderr:.6g}" if param.stderr else 'N/A',
-                            'Vary': param.vary
-                        })
+                    if hasattr(param, "value"):
+                        param_data.append(
+                            {
+                                "Parameter": pname,
+                                "Value": f"{param.value:.6g}",
+                                "Std Error": f"{param.stderr:.6g}"
+                                if param.stderr
+                                else "N/A",
+                                "Vary": param.vary,
+                            }
+                        )
                 df = pd.DataFrame(param_data)
                 html += df.to_html(index=False)
 
             # Fit statistics
-            html += '<h4>Fit Statistics:</h4>\n'
+            html += "<h4>Fit Statistics:</h4>\n"
             stats_data = {
-                'Reduced χ²': getattr(fit_result, 'redchi', 'N/A'),
-                'χ²': getattr(fit_result, 'chisqr', 'N/A'),
-                'Data points': getattr(fit_result, 'ndata', 'N/A'),
-                'Variables': getattr(fit_result, 'nvarys', 'N/A'),
-                'Function evals': getattr(fit_result, 'nfev', 'N/A'),
-                'Success': getattr(fit_result, 'success', 'N/A'),
+                "Reduced χ²": getattr(fit_result, "redchi", "N/A"),
+                "χ²": getattr(fit_result, "chisqr", "N/A"),
+                "Data points": getattr(fit_result, "ndata", "N/A"),
+                "Variables": getattr(fit_result, "nvarys", "N/A"),
+                "Function evals": getattr(fit_result, "nfev", "N/A"),
+                "Success": getattr(fit_result, "success", "N/A"),
             }
-            stats_df = pd.DataFrame(list(stats_data.items()), columns=['Statistic', 'Value'])
+            stats_df = pd.DataFrame(
+                list(stats_data.items()), columns=["Statistic", "Value"]
+            )
             html += stats_df.to_html(index=False)
 
-            html += '</div>'
+            html += "</div>"
 
         # Try to detect if we're in a Jupyter environment and auto-display
         try:
-            from IPython.display import HTML, display
             from IPython import get_ipython
+            from IPython.display import HTML, display
+
             if get_ipython() is not None:
                 # We're in IPython/Jupyter - display the HTML
                 display(HTML(html))
@@ -647,11 +706,13 @@ class GroupedFitResult:
         normalized_index = self._normalize_index(index)
 
         if normalized_index not in self.results:
-            raise ValueError(f"Index {index} not found. Available indices: {self.indices}")
+            raise ValueError(
+                f"Index {index} not found. Available indices: {self.indices}"
+            )
 
         result = self.results[normalized_index]
 
-        if hasattr(result, 'stages_summary'):
+        if hasattr(result, "stages_summary"):
             return result.stages_summary
         else:
             print(f"Warning: No stages_summary available for index {index}")
@@ -685,58 +746,70 @@ class GroupedFitResult:
 
         # Default to bar plot for multiple parameters
         if kind is None:
-            kind = 'bar'
+            kind = "bar"
 
         # Only bar and errorbar are supported for multi-parameter plots
-        if kind not in ['bar', 'errorbar']:
-            raise ValueError(f"Multi-parameter plots only support 'bar' or 'errorbar' kind, got '{kind}'")
+        if kind not in ["bar", "errorbar"]:
+            raise ValueError(
+                f"Multi-parameter plots only support 'bar' or 'errorbar' kind, got '{kind}'"
+            )
 
         # Build DataFrame with all parameters
         data_for_query = []
-        all_param_data = {pname: {'values': {}, 'errors': {}} for pname in param_names}
+        all_param_data = {pname: {"values": {}, "errors": {}} for pname in param_names}
 
         for idx in self.indices:
             result = self.results[idx]
-            row = {'index': idx}
+            row = {"index": idx}
 
             try:
                 # Add all parameter values and errors
                 for pname in result.params:
                     param = result.params[pname]
                     row[pname] = param.value
-                    row[f"{pname}_err"] = param.stderr if param.stderr is not None else np.nan
+                    row[f"{pname}_err"] = (
+                        param.stderr if param.stderr is not None else np.nan
+                    )
 
                 # Add fit statistics for query support
-                row['redchi'] = result.redchi if hasattr(result, 'redchi') else np.nan
-                row['chisqr'] = result.chisqr if hasattr(result, 'chisqr') else np.nan
-                row['aic'] = result.aic if hasattr(result, 'aic') else np.nan
-                row['bic'] = result.bic if hasattr(result, 'bic') else np.nan
-                row['nfev'] = result.nfev if hasattr(result, 'nfev') else np.nan
+                row["redchi"] = result.redchi if hasattr(result, "redchi") else np.nan
+                row["chisqr"] = result.chisqr if hasattr(result, "chisqr") else np.nan
+                row["aic"] = result.aic if hasattr(result, "aic") else np.nan
+                row["bic"] = result.bic if hasattr(result, "bic") else np.nan
+                row["nfev"] = result.nfev if hasattr(result, "nfev") else np.nan
 
                 data_for_query.append(row)
 
                 # Extract values and errors for each requested parameter
                 for pname in param_names:
-                    if pname.endswith('_err'):
+                    if pname.endswith("_err"):
                         base_param = pname[:-4]
                         if base_param in result.params:
-                            all_param_data[pname]['values'][idx] = result.params[base_param].stderr
-                            all_param_data[pname]['errors'][idx] = 0  # No error on errors
+                            all_param_data[pname]["values"][idx] = result.params[
+                                base_param
+                            ].stderr
+                            all_param_data[pname]["errors"][idx] = (
+                                0  # No error on errors
+                            )
                         else:
-                            all_param_data[pname]['values'][idx] = np.nan
-                            all_param_data[pname]['errors'][idx] = 0
+                            all_param_data[pname]["values"][idx] = np.nan
+                            all_param_data[pname]["errors"][idx] = 0
                     elif pname in result.params:
-                        all_param_data[pname]['values'][idx] = result.params[pname].value
+                        all_param_data[pname]["values"][idx] = result.params[
+                            pname
+                        ].value
                         stderr = result.params[pname].stderr
-                        all_param_data[pname]['errors'][idx] = stderr if stderr is not None else 0
+                        all_param_data[pname]["errors"][idx] = (
+                            stderr if stderr is not None else 0
+                        )
                     else:
-                        all_param_data[pname]['values'][idx] = np.nan
-                        all_param_data[pname]['errors'][idx] = 0
+                        all_param_data[pname]["values"][idx] = np.nan
+                        all_param_data[pname]["errors"][idx] = 0
 
             except Exception as e:
                 for pname in param_names:
-                    all_param_data[pname]['values'][idx] = np.nan
-                    all_param_data[pname]['errors'][idx] = 0
+                    all_param_data[pname]["values"][idx] = np.nan
+                    all_param_data[pname]["errors"][idx] = 0
 
         # Apply query filter if provided
         indices_to_plot = self.indices
@@ -744,12 +817,12 @@ class GroupedFitResult:
             df = pd.DataFrame(data_for_query)
             try:
                 filtered_df = df.query(query)
-                indices_to_plot = [row['index'] for _, row in filtered_df.iterrows()]
+                indices_to_plot = [row["index"] for _, row in filtered_df.iterrows()]
                 # Mask out filtered indices
                 for pname in param_names:
                     for idx in self.indices:
                         if idx not in indices_to_plot:
-                            all_param_data[pname]['values'][idx] = np.nan
+                            all_param_data[pname]["values"][idx] = np.nan
             except Exception as e:
                 print(f"Warning: Query failed: {e}")
                 print("Plotting all data without filtering.")
@@ -762,7 +835,9 @@ class GroupedFitResult:
         width = kwargs.pop("width", 0.8)
 
         # Get indices array
-        indices_array = np.array([self._parse_string_index(idx) for idx in self.indices])
+        indices_array = np.array(
+            [self._parse_string_index(idx) for idx in self.indices]
+        )
         n_params = len(param_names)
         n_groups = len(self.indices)
 
@@ -775,8 +850,15 @@ class GroupedFitResult:
 
         # Plot each parameter
         for i, pname in enumerate(param_names):
-            values = np.array([all_param_data[pname]['values'].get(idx, np.nan) for idx in self.indices])
-            errors = np.array([all_param_data[pname]['errors'].get(idx, 0) for idx in self.indices])
+            values = np.array(
+                [
+                    all_param_data[pname]["values"].get(idx, np.nan)
+                    for idx in self.indices
+                ]
+            )
+            errors = np.array(
+                [all_param_data[pname]["errors"].get(idx, 0) for idx in self.indices]
+            )
 
             # Calculate offset for this parameter
             offset = (i - n_params / 2 + 0.5) * bar_width
@@ -788,11 +870,22 @@ class GroupedFitResult:
             else:
                 color = None
 
-            if kind == 'bar':
-                ax.bar(positions, values, bar_width, label=pname, alpha=alpha, color=color)
-            elif kind == 'errorbar':
-                ax.errorbar(positions, values, yerr=errors, fmt='o', capsize=5,
-                           label=pname, alpha=alpha, color=color, markersize=8)
+            if kind == "bar":
+                ax.bar(
+                    positions, values, bar_width, label=pname, alpha=alpha, color=color
+                )
+            elif kind == "errorbar":
+                ax.errorbar(
+                    positions,
+                    values,
+                    yerr=errors,
+                    fmt="o",
+                    capsize=5,
+                    label=pname,
+                    alpha=alpha,
+                    color=color,
+                    markersize=8,
+                )
 
         # Set x-axis labels
         ax.set_xticks(x_positions)
@@ -802,7 +895,7 @@ class GroupedFitResult:
 
         # Set title
         if title is None:
-            title = f"Parameter Comparison"
+            title = "Parameter Comparison"
         ax.set_title(title)
 
         # Add legend
@@ -845,16 +938,18 @@ class GroupedFitResult:
 
         # Check if multiple parameters are requested
         if isinstance(param_name, (list, tuple)):
-            return self._plot_multi_parameter_map(param_name, query=query, kind=kind, **kwargs)
+            return self._plot_multi_parameter_map(
+                param_name, query=query, kind=kind, **kwargs
+            )
 
         # Auto-detect plot kind based on group_shape if not specified
         if kind is None:
             if self.group_shape and len(self.group_shape) == 2:
-                kind = 'pcolormesh'
+                kind = "pcolormesh"
             elif self.group_shape and len(self.group_shape) == 1:
-                kind = 'line'
+                kind = "line"
             else:
-                kind = 'bar'
+                kind = "bar"
 
         # Build DataFrame with all parameters, errors, and statistics
         data_for_query = []
@@ -862,31 +957,33 @@ class GroupedFitResult:
 
         for idx in self.indices:
             result = self.results[idx]
-            row = {'index': idx}
+            row = {"index": idx}
 
             try:
                 # Add all parameter values and errors
                 for pname in result.params:
                     param = result.params[pname]
                     row[pname] = param.value
-                    row[f"{pname}_err"] = param.stderr if param.stderr is not None else np.nan
+                    row[f"{pname}_err"] = (
+                        param.stderr if param.stderr is not None else np.nan
+                    )
 
                 # Add fit statistics
-                row['redchi'] = result.redchi if hasattr(result, 'redchi') else np.nan
-                row['chisqr'] = result.chisqr if hasattr(result, 'chisqr') else np.nan
-                row['aic'] = result.aic if hasattr(result, 'aic') else np.nan
-                row['bic'] = result.bic if hasattr(result, 'bic') else np.nan
-                row['nfev'] = result.nfev if hasattr(result, 'nfev') else np.nan
+                row["redchi"] = result.redchi if hasattr(result, "redchi") else np.nan
+                row["chisqr"] = result.chisqr if hasattr(result, "chisqr") else np.nan
+                row["aic"] = result.aic if hasattr(result, "aic") else np.nan
+                row["bic"] = result.bic if hasattr(result, "bic") else np.nan
+                row["nfev"] = result.nfev if hasattr(result, "nfev") else np.nan
 
                 data_for_query.append(row)
 
                 # Extract the specific parameter value requested
-                if param_name.endswith('_err'):
+                if param_name.endswith("_err"):
                     # Error requested
                     base_param = param_name[:-4]
                     if base_param in result.params:
                         param_values[idx] = result.params[base_param].stderr
-                elif param_name in ['redchi', 'chisqr', 'aic', 'bic', 'nfev']:
+                elif param_name in ["redchi", "chisqr", "aic", "bic", "nfev"]:
                     # Statistic requested
                     param_values[idx] = getattr(result, param_name, np.nan)
                 elif param_name in result.params:
@@ -904,7 +1001,7 @@ class GroupedFitResult:
             df = pd.DataFrame(data_for_query)
             try:
                 filtered_df = df.query(query)
-                indices_to_plot = [row['index'] for _, row in filtered_df.iterrows()]
+                indices_to_plot = [row["index"] for _, row in filtered_df.iterrows()]
                 # Mask out filtered indices
                 for idx in self.indices:
                     if idx not in indices_to_plot:
@@ -961,11 +1058,19 @@ class GroupedFitResult:
                         param_array[y_map[y], x_map[x]] = param_values[idx_str]
 
             fig, ax = plt.subplots(figsize=figsize)
-            im = ax.pcolormesh(x_edges, y_edges, param_array, cmap=cmap, vmin=vmin, vmax=vmax,
-                              shading='flat', **kwargs)
+            im = ax.pcolormesh(
+                x_edges,
+                y_edges,
+                param_array,
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                shading="flat",
+                **kwargs,
+            )
             ax.set_xlabel("X coordinate")
             ax.set_ylabel("Y coordinate")
-            ax.set_aspect('equal')
+            ax.set_aspect("equal")
             if title is None:
                 title = f"{param_name} Map"
             ax.set_title(title)
@@ -974,12 +1079,19 @@ class GroupedFitResult:
 
         elif self.group_shape and len(self.group_shape) == 1:
             # 1D plot
-            indices_array = np.array([self._parse_string_index(idx) for idx in self.indices])
-            values = np.array([param_values[idx] if param_values[idx] is not None else np.nan for idx in self.indices])
+            indices_array = np.array(
+                [self._parse_string_index(idx) for idx in self.indices]
+            )
+            values = np.array(
+                [
+                    param_values[idx] if param_values[idx] is not None else np.nan
+                    for idx in self.indices
+                ]
+            )
 
             # Get errors if available for errorbar plot
             errors = None
-            if kind == 'errorbar' and not param_name.endswith('_err'):
+            if kind == "errorbar" and not param_name.endswith("_err"):
                 errors = []
                 for idx in self.indices:
                     result = self.results[idx]
@@ -992,17 +1104,26 @@ class GroupedFitResult:
 
             fig, ax = plt.subplots(figsize=figsize)
 
-            if kind == 'line':
-                ax.plot(indices_array, values, 'o-', **kwargs)
-            elif kind == 'bar':
+            if kind == "line":
+                ax.plot(indices_array, values, "o-", **kwargs)
+            elif kind == "bar":
                 ax.bar(indices_array, values, **kwargs)
-            elif kind == 'errorbar':
+            elif kind == "errorbar":
                 if errors is not None:
-                    ax.errorbar(indices_array, values, yerr=errors, fmt='o-', capsize=5, **kwargs)
+                    ax.errorbar(
+                        indices_array,
+                        values,
+                        yerr=errors,
+                        fmt="o-",
+                        capsize=5,
+                        **kwargs,
+                    )
                 else:
-                    ax.plot(indices_array, values, 'o-', **kwargs)
+                    ax.plot(indices_array, values, "o-", **kwargs)
             else:
-                raise ValueError(f"Unknown kind '{kind}'. Must be 'line', 'bar', or 'errorbar'.")
+                raise ValueError(
+                    f"Unknown kind '{kind}'. Must be 'line', 'bar', or 'errorbar'."
+                )
 
             ax.set_xlabel("Index")
             ax.set_ylabel(param_name)
@@ -1016,11 +1137,14 @@ class GroupedFitResult:
             # Named indices - bar or line plot
             fig, ax = plt.subplots(figsize=figsize)
             positions = np.arange(len(self.indices))
-            values = [param_values[idx] if param_values[idx] is not None else np.nan for idx in self.indices]
+            values = [
+                param_values[idx] if param_values[idx] is not None else np.nan
+                for idx in self.indices
+            ]
 
             # Get errors if available for errorbar plot
             errors = None
-            if kind == 'errorbar' and not param_name.endswith('_err'):
+            if kind == "errorbar" and not param_name.endswith("_err"):
                 errors = []
                 for idx in self.indices:
                     result = self.results[idx]
@@ -1030,20 +1154,24 @@ class GroupedFitResult:
                     else:
                         errors.append(0)
 
-            if kind == 'line':
-                ax.plot(positions, values, 'o-', **kwargs)
-            elif kind == 'bar':
+            if kind == "line":
+                ax.plot(positions, values, "o-", **kwargs)
+            elif kind == "bar":
                 ax.bar(positions, values, **kwargs)
-            elif kind == 'errorbar':
+            elif kind == "errorbar":
                 if errors is not None:
-                    ax.errorbar(positions, values, yerr=errors, fmt='o', capsize=5, **kwargs)
+                    ax.errorbar(
+                        positions, values, yerr=errors, fmt="o", capsize=5, **kwargs
+                    )
                 else:
-                    ax.plot(positions, values, 'o', **kwargs)
+                    ax.plot(positions, values, "o", **kwargs)
             else:
-                raise ValueError(f"Unknown kind '{kind}'. Must be 'line', 'bar', or 'errorbar'.")
+                raise ValueError(
+                    f"Unknown kind '{kind}'. Must be 'line', 'bar', or 'errorbar'."
+                )
 
             ax.set_xticks(positions)
-            ax.set_xticklabels(self.indices, rotation=45, ha='right')
+            ax.set_xticklabels(self.indices, rotation=45, ha="right")
             ax.set_ylabel(param_name)
             if title is None:
                 title = f"{param_name} by Group"
@@ -1072,15 +1200,16 @@ class GroupedFitResult:
         >>> result.save("results.json")  # Compact save
         >>> result.save("results_full.json", compact=False)  # Full save with model
         """
-        import json
 
         # Prepare grouped results structure
         grouped_state = {
-            'version': '1.0',
-            'class': 'GroupedFitResult',
-            'group_shape': self.group_shape,
-            'indices': [str(idx) for idx in self.indices],  # Convert to strings for JSON
-            'results': {}
+            "version": "1.0",
+            "class": "GroupedFitResult",
+            "group_shape": self.group_shape,
+            "indices": [
+                str(idx) for idx in self.indices
+            ],  # Convert to strings for JSON
+            "results": {},
         }
 
         # Save each result
@@ -1091,64 +1220,76 @@ class GroupedFitResult:
             if compact:
                 # Save only essential data for map plotting
                 result_data = {
-                    'compact': True,
-                    'params': {},
-                    'redchi': result.redchi if hasattr(result, 'redchi') else None,
-                    'chisqr': result.chisqr if hasattr(result, 'chisqr') else None,
-                    'success': result.success if hasattr(result, 'success') else None,
+                    "compact": True,
+                    "params": {},
+                    "redchi": result.redchi if hasattr(result, "redchi") else None,
+                    "chisqr": result.chisqr if hasattr(result, "chisqr") else None,
+                    "success": result.success if hasattr(result, "success") else None,
                 }
                 # Extract parameter values and errors
                 for param_name in result.params:
                     param = result.params[param_name]
-                    result_data['params'][param_name] = {
-                        'value': float(param.value),
-                        'stderr': float(param.stderr) if param.stderr is not None else None,
-                        'vary': bool(param.vary),
+                    result_data["params"][param_name] = {
+                        "value": float(param.value),
+                        "stderr": float(param.stderr)
+                        if param.stderr is not None
+                        else None,
+                        "vary": bool(param.vary),
                     }
             else:
                 # Save full result
                 result_data = {
-                    'compact': False,
-                    'params': result.params.dumps(),
-                    'init_params': result.init_params.dumps() if hasattr(result, 'init_params') else None,
-                    'success': result.success if hasattr(result, 'success') else None,
-                    'message': result.message if hasattr(result, 'message') else None,
-                    'nfev': result.nfev if hasattr(result, 'nfev') else None,
-                    'nvarys': result.nvarys if hasattr(result, 'nvarys') else None,
-                    'ndata': result.ndata if hasattr(result, 'ndata') else None,
-                    'nfree': result.nfree if hasattr(result, 'nfree') else None,
-                    'chisqr': result.chisqr if hasattr(result, 'chisqr') else None,
-                    'redchi': result.redchi if hasattr(result, 'redchi') else None,
-                    'aic': result.aic if hasattr(result, 'aic') else None,
-                    'bic': result.bic if hasattr(result, 'bic') else None,
+                    "compact": False,
+                    "params": result.params.dumps(),
+                    "init_params": result.init_params.dumps()
+                    if hasattr(result, "init_params")
+                    else None,
+                    "success": result.success if hasattr(result, "success") else None,
+                    "message": result.message if hasattr(result, "message") else None,
+                    "nfev": result.nfev if hasattr(result, "nfev") else None,
+                    "nvarys": result.nvarys if hasattr(result, "nvarys") else None,
+                    "ndata": result.ndata if hasattr(result, "ndata") else None,
+                    "nfree": result.nfree if hasattr(result, "nfree") else None,
+                    "chisqr": result.chisqr if hasattr(result, "chisqr") else None,
+                    "redchi": result.redchi if hasattr(result, "redchi") else None,
+                    "aic": result.aic if hasattr(result, "aic") else None,
+                    "bic": result.bic if hasattr(result, "bic") else None,
                 }
 
                 # Save stages_summary if available (for rietveld fits)
-                if hasattr(result, 'stages_summary') and result.stages_summary is not None:
+                if (
+                    hasattr(result, "stages_summary")
+                    and result.stages_summary is not None
+                ):
                     import pandas as pd
-                    if isinstance(result.stages_summary, pd.DataFrame):
-                        result_data['stages_summary'] = result.stages_summary.to_json(orient='split')
 
-            grouped_state['results'][idx_str] = result_data
+                    if isinstance(result.stages_summary, pd.DataFrame):
+                        result_data["stages_summary"] = result.stages_summary.to_json(
+                            orient="split"
+                        )
+
+            grouped_state["results"][idx_str] = result_data
 
         # Save to file
-        with open(filename, 'w') as f:
+        with open(filename, "w") as f:
             json.dump(grouped_state, f, indent=2)
 
         # Save model if not compact
-        if not compact and model_filename != '' and len(self.indices) > 0:
+        if not compact and model_filename != "" and len(self.indices) > 0:
             if model_filename is None:
-                model_filename = filename.replace('.json', '_model.json')
+                model_filename = filename.replace(".json", "_model.json")
                 if model_filename == filename:
-                    model_filename = filename.replace('.json', '') + '_model.json'
+                    model_filename = filename.replace(".json", "") + "_model.json"
 
             # Get model from first result
             first_result = self.results[self.indices[0]]
-            if hasattr(first_result, 'model'):
+            if hasattr(first_result, "model"):
                 first_result.model.save(model_filename)
 
     @classmethod
-    def load(cls, filename: str, model_filename: str = None, model: 'TransmissionModel' = None):
+    def load(
+        cls, filename: str, model_filename: str = None, model: TransmissionModel = None
+    ):
         """
         Load grouped fit results from a JSON file.
 
@@ -1172,24 +1313,29 @@ class GroupedFitResult:
         >>> result = GroupedFitResult.load("results.json")
         >>>
         >>> # Load full results with model
-        >>> result = GroupedFitResult.load("results_full.json", model_filename="model.json")
+        >>> result = GroupedFitResult.load(
+        ...     "results_full.json", model_filename="model.json"
+        ... )
         >>>
         >>> # Load with existing model
         >>> model = TransmissionModel.load("model.json")
         >>> result = GroupedFitResult.load("results_full.json", model=model)
         """
-        import json
         import ast
 
-        with open(filename, 'r') as f:
+        with open(filename) as f:
             grouped_state = json.load(f)
 
         # Create new instance
-        group_shape = tuple(grouped_state['group_shape']) if grouped_state['group_shape'] else None
+        group_shape = (
+            tuple(grouped_state["group_shape"])
+            if grouped_state["group_shape"]
+            else None
+        )
         grouped_result = cls(group_shape=group_shape)
 
         # Parse indices back to original types
-        indices_str = grouped_state['indices']
+        indices_str = grouped_state["indices"]
         indices = []
         for idx_str in indices_str:
             try:
@@ -1202,15 +1348,19 @@ class GroupedFitResult:
 
         # Try to load model for compact results (for plotting support)
         model_for_compact = None
-        if any(grouped_state['results'][idx_str].get('compact', False) for idx_str in indices_str):
+        if any(
+            grouped_state["results"][idx_str].get("compact", False)
+            for idx_str in indices_str
+        ):
             # At least one compact result - try to load model
             try:
                 if model is None and model_filename is None:
-                    model_filename = filename.replace('.json', '_model.json')
+                    model_filename = filename.replace(".json", "_model.json")
                     if model_filename == filename:
-                        model_filename = filename.replace('.json', '') + '_model.json'
+                        model_filename = filename.replace(".json", "") + "_model.json"
                 if model is None:
                     from nres.models import TransmissionModel
+
                     model_for_compact = TransmissionModel.load(model_filename)
                 else:
                     model_for_compact = model
@@ -1221,59 +1371,70 @@ class GroupedFitResult:
         # Load each result
         for i, idx in enumerate(indices):
             idx_str = indices_str[i]  # Use original string representation
-            result_data = grouped_state['results'][idx_str]
+            result_data = grouped_state["results"][idx_str]
 
-            if result_data.get('compact', False):
+            if result_data.get("compact", False):
                 # Create a minimal result object for compact storage
                 from types import SimpleNamespace
+
                 from lmfit import Parameters
 
                 result = SimpleNamespace()
                 result.params = Parameters()
-                for param_name, param_data in result_data['params'].items():
-                    result.params.add(param_name,
-                                    value=param_data['value'],
-                                    vary=param_data['vary'])
-                    result.params[param_name].stderr = param_data['stderr']
-                result.redchi = result_data['redchi']
-                result.chisqr = result_data['chisqr']
-                result.success = result_data['success']
+                for param_name, param_data in result_data["params"].items():
+                    result.params.add(
+                        param_name, value=param_data["value"], vary=param_data["vary"]
+                    )
+                    result.params[param_name].stderr = param_data["stderr"]
+                result.redchi = result_data["redchi"]
+                result.chisqr = result_data["chisqr"]
+                result.success = result_data["success"]
                 result.compact = True
-                result.model = model_for_compact  # Store reference to model for plotting
+                result.model = (
+                    model_for_compact  # Store reference to model for plotting
+                )
             else:
                 # Reconstruct full ModelResult
+                import pandas as pd
                 from lmfit import Parameters
                 from lmfit.model import ModelResult
-                import pandas as pd
 
                 # Load or use provided model
                 if model is None:
                     if model_filename is None:
-                        model_filename = filename.replace('.json', '_model.json')
+                        model_filename = filename.replace(".json", "_model.json")
                         if model_filename == filename:
-                            model_filename = filename.replace('.json', '') + '_model.json'
+                            model_filename = (
+                                filename.replace(".json", "") + "_model.json"
+                            )
                     from nres.models import TransmissionModel
+
                     model = TransmissionModel.load(model_filename)
 
                 # Create minimal result object
                 params = Parameters()
-                params.loads(result_data['params'])
+                params.loads(result_data["params"])
 
                 result = ModelResult(model, params)
-                result.success = result_data['success']
-                result.message = result_data.get('message')
-                result.nfev = result_data.get('nfev')
-                result.nvarys = result_data.get('nvarys')
-                result.ndata = result_data.get('ndata')
-                result.nfree = result_data.get('nfree')
-                result.chisqr = result_data.get('chisqr')
-                result.redchi = result_data.get('redchi')
-                result.aic = result_data.get('aic')
-                result.bic = result_data.get('bic')
+                result.success = result_data["success"]
+                result.message = result_data.get("message")
+                result.nfev = result_data.get("nfev")
+                result.nvarys = result_data.get("nvarys")
+                result.ndata = result_data.get("ndata")
+                result.nfree = result_data.get("nfree")
+                result.chisqr = result_data.get("chisqr")
+                result.redchi = result_data.get("redchi")
+                result.aic = result_data.get("aic")
+                result.bic = result_data.get("bic")
 
                 # Restore stages_summary if available
-                if 'stages_summary' in result_data and result_data['stages_summary'] is not None:
-                    result.stages_summary = pd.read_json(result_data['stages_summary'], orient='split')
+                if (
+                    "stages_summary" in result_data
+                    and result_data["stages_summary"] is not None
+                ):
+                    result.stages_summary = pd.read_json(
+                        result_data["stages_summary"], orient="split"
+                    )
 
             grouped_result.add_result(idx, result)
 
