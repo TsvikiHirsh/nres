@@ -34,17 +34,30 @@ Simple yet powerful package for fitting neutron resonances.
 
 ## Installation
 
-### From PyPI (recommended)
+### Quick Install (Recommended)
+```bash
+pip install git+https://github.com/TsvikiHirsh/nres
+```
+
+### From PyPI (when published)
 ```bash
 pip install nres
 ```
 
-### From source
+### From source (for development)
 ```bash
 git clone https://github.com/TsvikiHirsh/nres
 cd nres
-pip install .
+pip install -e .[dev]
 ```
+
+> **⚠️ Installation Issues?** See [INSTALLATION.md](INSTALLATION.md) for troubleshooting guide, especially if you encounter "ModuleNotFoundError: No module named 'pybind11'".
+
+### Requirements
+- Python 3.8 or higher
+- C++ compiler with C++17 support (GCC/Clang/MSVC)
+
+For detailed installation instructions and troubleshooting, see [INSTALLATION.md](INSTALLATION.md).
 
 For development:
 ```bash
