@@ -1,5 +1,7 @@
-from setuptools import setup, find_packages
+from __future__ import annotations
+
 from pybind11.setup_helpers import Pybind11Extension
+from setuptools import find_packages, setup
 
 # Define the extension module using Pybind11Extension
 ext_modules = [

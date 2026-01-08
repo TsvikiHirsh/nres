@@ -1,13 +1,17 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from typing import List, Optional, Union
+
 import lmfit
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas
+
 import nres.utils as utils
-from nres.response import Response, Background
 from nres.cross_section import CrossSection
 from nres.data import Data
-import pandas
-import matplotlib.pyplot as plt
-from copy import deepcopy 
-from typing import List, Optional, Union
+from nres.response import Background, Response
 
 
 class TransmissionModel(lmfit.Model):
@@ -19,7 +23,7 @@ class TransmissionModel(lmfit.Model):
                         vary_background: bool = None,
                         vary_tof: bool = None,
                         vary_response: bool = None,
-                        params: "lmfit.Parameters" = None,
+                        params: lmfit.Parameters = None,
                         **kwargs):
         """
         Initialize the TransmissionModel, a subclass of lmfit.Model.
@@ -175,7 +179,7 @@ class TransmissionModel(lmfit.Model):
         T = norm * np.exp(- xs * thickness * n) * (1 - bg) + k*bg
         return T
 
-    def _load_param_values(self, source_params: "lmfit.Parameters"):
+    def _load_param_values(self, source_params: lmfit.Parameters):
         """
         Load parameter values from a source Parameters object.
 
@@ -441,7 +445,7 @@ class TransmissionModel(lmfit.Model):
 
         return fit_result
 
-    def _rietveld_fit(self, data, params: "lmfit.Parameters" = None, emin: float = 0.5e6, emax: float = 20.e6,
+    def _rietveld_fit(self, data, params: lmfit.Parameters = None, emin: float = 0.5e6, emax: float = 20.e6,
                     verbose=False, progress_bar=True,
                     param_groups=None,
                     **kwargs):
@@ -484,11 +488,12 @@ class TransmissionModel(lmfit.Model):
             Summary of each fitting stage, including parameter values and reduced chi-squared.
         """
 
-        from copy import deepcopy
+        import fnmatch
+        import re
         import sys
         import warnings
-        import re
-        import fnmatch
+        from copy import deepcopy
+
         import pandas
         try:
             from tqdm.notebook import tqdm
@@ -515,19 +520,17 @@ class TransmissionModel(lmfit.Model):
                 if verbose:
                     print(f"  Resolved group '{item}' to: {resolved}")
                 return resolved
-            elif item in self.params:
+            if item in self.params:
                 if verbose:
                     print(f"  Found parameter: {item}")
                 return [item]
-            else:
-                matching_params = [p for p in self.params.keys() if fnmatch.fnmatch(p, item)]
-                if matching_params:
-                    if verbose:
-                        print(f"  Pattern '{item}' matched: {matching_params}")
-                    return matching_params
-                else:
-                    warnings.warn(f"Unknown parameter or group: '{item}'. Available parameters: {list(self.params.keys())}")
-                    return []
+            matching_params = [p for p in self.params.keys() if fnmatch.fnmatch(p, item)]
+            if matching_params:
+                if verbose:
+                    print(f"  Pattern '{item}' matched: {matching_params}")
+                return matching_params
+            warnings.warn(f"Unknown parameter or group: '{item}'. Available parameters: {list(self.params.keys())}")
+            return []
 
         def resolve_group(entry):
             """
@@ -558,7 +561,7 @@ class TransmissionModel(lmfit.Model):
                     elif item == "pick-one" or item == "pick_one":
                         overrides['pick_one'] = True
                         if verbose:
-                            print(f"  Pick-one mode detected: will test each isotope individually")
+                            print("  Pick-one mode detected: will test each isotope individually")
                     else:
                         params_list.extend(resolve_single_param_or_group(item))
                 elif isinstance(item, list):
@@ -622,7 +625,7 @@ class TransmissionModel(lmfit.Model):
         stage_names, resolved_param_groups, stage_overrides = zip(*filtered)
 
         if verbose:
-            print(f"\nFitting stages with possible energy overrides:")
+            print("\nFitting stages with possible energy overrides:")
             for i, (name, group, ov) in enumerate(zip(stage_names, resolved_param_groups, stage_overrides)):
                 print(f"  {name}: {group}  overrides: {ov}")
 
@@ -717,7 +720,7 @@ class TransmissionModel(lmfit.Model):
             # Check if pick-one mode is enabled for this stage
             if overrides.get('pick_one', False):
                 if verbose:
-                    print(f"\n  Pick-one mode: Testing each isotope individually...")
+                    print("\n  Pick-one mode: Testing each isotope individually...")
 
                 # Get isotope names from cross-section weights
                 isotope_names = list(self.cross_section.weights.index)
@@ -729,7 +732,7 @@ class TransmissionModel(lmfit.Model):
                 if len(isotope_names) <= 1:
                     warnings.warn(f"Pick-one mode requires at least 2 isotopes, but found {len(isotope_names)}. Skipping pick-one.")
                 elif not p_params:
-                    warnings.warn(f"Pick-one mode requires weight parameters (p1, p2, ...), but none found. Skipping pick-one.")
+                    warnings.warn("Pick-one mode requires weight parameters (p1, p2, ...), but none found. Skipping pick-one.")
                 else:
                     # Store results for each isotope test
                     isotope_results = []
@@ -991,8 +994,8 @@ class TransmissionModel(lmfit.Model):
 
 
     def _create_stages_summary_table_enhanced(self, stage_results, resolved_param_groups, stage_names=None, color=True):
-        import pandas as pd
         import numpy as np
+        import pandas as pd
 
         # --- Build the DataFrame ---
         all_param_names = list(stage_results[-1].params.keys())
@@ -1151,9 +1154,11 @@ class TransmissionModel(lmfit.Model):
         GroupedFitResult
             Container with fit results for each group.
         """
-        from joblib import Parallel, delayed
-        from nres.grouped_fit import GroupedFitResult
         import time
+
+        from joblib import Parallel, delayed
+
+        from nres.grouped_fit import GroupedFitResult
 
         try:
             from tqdm.auto import tqdm
@@ -1281,11 +1286,11 @@ class TransmissionModel(lmfit.Model):
                 "response": [p for p in self.params if self.response and p in self.response.params and self.params[p].vary],
                 "weights": [p for p in self.params if re.compile(r"p\d+").match(p) and self.params[p].vary],
             }
-            
+
             for group_name, params in group_map.items():
                 if params:  # Only show groups with available parameters
                     print(f"  '{group_name}': {params}")
-            
+
         if show_params:
             if show_groups:
                 print("\nAll individual parameters:")
@@ -1293,11 +1298,11 @@ class TransmissionModel(lmfit.Model):
             else:
                 print("Available parameters:")
                 print("=" * 20)
-                
+
             for param_name, param in self.params.items():
                 vary_status = "vary" if param.vary else "fixed"
                 print(f"  {param_name}: {param.value:.6g} ({vary_status})")
-                
+
         print("\nExample usage:")
         print("=" * 15)
         print("# Using predefined groups:")
@@ -1309,7 +1314,7 @@ class TransmissionModel(lmfit.Model):
         print("\n# Mixed approach:")
         print('param_groups = ["basic", ["b0", "ext_l2"], "lattice"]')
 
-    def plot(self, data: "nres.Data" = None, plot_bg: bool = True, correct_tof: bool = True, stage: int = None, index=None, **kwargs):
+    def plot(self, data: nres.Data = None, plot_bg: bool = True, correct_tof: bool = True, stage: int = None, index=None, **kwargs):
         """
         Plot the results of the fit or model.
 
@@ -1366,25 +1371,25 @@ class TransmissionModel(lmfit.Model):
             # Use specific stage results
             if stage < 1 or stage > len(self.fit_stages):
                 raise ValueError(f"Stage {stage} not available. Available stages: 1-{len(self.fit_stages)}")
-            
+
             # Get stage results
             stage_result = self.fit_stages[stage - 1]  # Convert to 0-indexed
-            
+
             # We need to reconstruct the fit data from the original fit
             if hasattr(self, "fit_result") and self.fit_result is not None:
-                energy = self.fit_result.userkws["E"]    
-                data_values = self.fit_result.data    
-                err = 1. / self.fit_result.weights    
+                energy = self.fit_result.userkws["E"]
+                data_values = self.fit_result.data
+                err = 1. / self.fit_result.weights
             else:
                 raise ValueError("Cannot plot stage results without original fit data")
-                
+
             # Use stage parameters to evaluate model
             params = stage_result.params
             best_fit = self.eval(params=params, E=energy)
             residual = (data_values - best_fit) / err
             chi2 = stage_result.redchi if hasattr(stage_result, 'redchi') else np.sum(residual**2) / (len(data_values) - len(params))
             fit_label = f"Stage {stage} fit"
-            
+
         elif hasattr(self, "fit_result"):
             # Use final fit results
             energy = self.fit_result.userkws["E"]
@@ -1594,7 +1599,7 @@ class TransmissionModel(lmfit.Model):
         """
         if not hasattr(self, "stages_summary"):
             raise ValueError("No stages summary available. Run fit with method='rietveld' first.")
-        
+
         return self.stages_summary
 
     def weighted_thickness(self,params=None):
@@ -1613,7 +1618,7 @@ class TransmissionModel(lmfit.Model):
             thickness = self.params["thickness"].value
         return thickness * weights
 
-    
+
     def _make_tof_params(self, vary: bool = False, kind:str = "linear", L0: float = 1.,
                                  t0: float = 0.,t1: float = 0., t2: float = 0.):
         """
@@ -1683,20 +1688,20 @@ class TransmissionModel(lmfit.Model):
             for i, name in enumerate(param_names[:-1]):
                 initial_value = weights[i]  # Use weight values
                 params.add(f'p{i+1}',value=np.log(weights[i]/last_weight),min=-14,max=14,vary=vary) # limit to 1ppm
-            
+
             # Define the normalization expression
             normalization_expr = ' + '.join([f'exp(p{i+1})' for i in range(N-1)])
-            
+
             # Add weights based on the free parameters
             for i, name in enumerate(param_names[:-1]):
                 params.add(f'{name}', expr=f'exp(p{i+1}) / (1 + {normalization_expr})')
-            
+
             # The last weight is 1 minus the sum of the previous weights
             params.add(f'{param_names[-1]}', expr=f'1 / (1 + {normalization_expr})')
 
         return params
 
-    def set_cross_section(self, xs: 'CrossSection', inplace: bool = True) -> 'TransmissionModel':
+    def set_cross_section(self, xs: CrossSection, inplace: bool = True) -> TransmissionModel:
         """
         Set a new cross-section for the model.
 
@@ -1718,12 +1723,11 @@ class TransmissionModel(lmfit.Model):
             params = self._make_weight_params()
             self.params += params
             return self
-        else:
-            new_self = deepcopy(self)
-            new_self.cross_section = xs
-            params = new_self._make_weight_params()
-            new_self.params += params
-            return new_self
+        new_self = deepcopy(self)
+        new_self.cross_section = xs
+        params = new_self._make_weight_params()
+        new_self.params += params
+        return new_self
 
     def update_params(self, params: dict = {}, values_only: bool = True, inplace: bool = True):
         """
@@ -1799,7 +1803,7 @@ class TransmissionModel(lmfit.Model):
         dtof = (1.0 - L0) * tof + t0 + t1 * E + t2 * np.log(E)
         E = utils.time2energy(tof + dtof, self.cross_section.L)
         return E
-    
+
 
     def manually_calibrate_tof(self,
                                 inputs: Union[list, np.ndarray] = None,
@@ -1975,7 +1979,7 @@ class TransmissionModel(lmfit.Model):
             json.dump(model_data, f, indent=2)
 
     @classmethod
-    def load(cls, filename: str) -> 'TransmissionModel':
+    def load(cls, filename: str) -> TransmissionModel:
         """
         Load a model from a JSON file.
 
@@ -1996,7 +2000,7 @@ class TransmissionModel(lmfit.Model):
         """
         import json
 
-        with open(filename, 'r') as f:
+        with open(filename) as f:
             model_data = json.load(f)
 
         # Reconstruct cross-section
@@ -2093,6 +2097,7 @@ class TransmissionModel(lmfit.Model):
             only a compressed result with fit parameters. Default is True.
         """
         import json
+
         import numpy as np
 
         # Serialize fit parameters
@@ -2126,14 +2131,14 @@ class TransmissionModel(lmfit.Model):
         # Optionally include the model
         if include_model:
             # Temporarily save model to get its JSON representation
-            import tempfile
             import os
+            import tempfile
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_f:
                 temp_filename = temp_f.name
 
             try:
                 self.save(temp_filename)
-                with open(temp_filename, 'r') as f:
+                with open(temp_filename) as f:
                     model_dict = json.load(f)
                 result_dict['model'] = model_dict
             finally:
@@ -2145,7 +2150,7 @@ class TransmissionModel(lmfit.Model):
             json.dump(result_dict, f, indent=2)
 
     @classmethod
-    def load_result(cls, filename: str, model: 'TransmissionModel' = None):
+    def load_result(cls, filename: str, model: TransmissionModel = None):
         """
         Load a fit result from a JSON file.
 
@@ -2173,10 +2178,10 @@ class TransmissionModel(lmfit.Model):
         >>> model, result_data = TransmissionModel.load_result("result.json", model=my_model)
         """
         import json
-        import tempfile
         import os
+        import tempfile
 
-        with open(filename, 'r') as f:
+        with open(filename) as f:
             result_data = json.load(f)
 
         # Load or use provided model
@@ -2294,7 +2299,7 @@ class TransmissionModel(lmfit.Model):
             json.dump(model_data, f, indent=2)
 
     @classmethod
-    def load(cls, filename: str) -> 'TransmissionModel':
+    def load(cls, filename: str) -> TransmissionModel:
         """
         Load a model from a JSON file.
 
@@ -2315,7 +2320,7 @@ class TransmissionModel(lmfit.Model):
         """
         import json
 
-        with open(filename, 'r') as f:
+        with open(filename) as f:
             model_data = json.load(f)
 
         # Reconstruct cross-section
@@ -2412,6 +2417,7 @@ class TransmissionModel(lmfit.Model):
             only a compressed result with fit parameters. Default is True.
         """
         import json
+
         import numpy as np
 
         # Serialize fit parameters
@@ -2445,14 +2451,14 @@ class TransmissionModel(lmfit.Model):
         # Optionally include the model
         if include_model:
             # Temporarily save model to get its JSON representation
-            import tempfile
             import os
+            import tempfile
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_f:
                 temp_filename = temp_f.name
 
             try:
                 self.save(temp_filename)
-                with open(temp_filename, 'r') as f:
+                with open(temp_filename) as f:
                     model_dict = json.load(f)
                 result_dict['model'] = model_dict
             finally:
@@ -2464,7 +2470,7 @@ class TransmissionModel(lmfit.Model):
             json.dump(result_dict, f, indent=2)
 
     @classmethod
-    def load_result(cls, filename: str, model: 'TransmissionModel' = None):
+    def load_result(cls, filename: str, model: TransmissionModel = None):
         """
         Load a fit result from a JSON file.
 
@@ -2492,10 +2498,10 @@ class TransmissionModel(lmfit.Model):
         >>> model, result_data = TransmissionModel.load_result("result.json", model=my_model)
         """
         import json
-        import tempfile
         import os
+        import tempfile
 
-        with open(filename, 'r') as f:
+        with open(filename) as f:
             result_data = json.load(f)
 
         # Load or use provided model

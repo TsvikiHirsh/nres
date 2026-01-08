@@ -1,9 +1,13 @@
+from __future__ import annotations
+
+import inspect
+
+import lmfit
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import exponnorm
-import matplotlib.pyplot as plt
-import lmfit
-import inspect
+
 
 class Response:
     def __init__(self, kind="expo_gauss", vary: bool = False, eps: float = 1.0e-6,
@@ -45,7 +49,7 @@ class Response:
         lmfit_params (lmfit.Parameters): Optional lmfit.Parameters to define limits and vary.
         kwargs: Default parameter values for the response function.
         """
-        
+
 
         # Detect parameters of the response function
         sig_params = inspect.signature(response_func).parameters
@@ -54,7 +58,7 @@ class Response:
                 self.params.add(param, value=default, vary=True)
             else:
                 raise ValueError(f"Parameter '{param}' not found in the response function signature.")
-            
+
         self.function = response_func.pdf(self.tgrid)
 
         # Use optional lmfit.Parameters to customize limits and vary
@@ -80,7 +84,7 @@ class Response:
         center_idx = len(arr) // 2
         left_idx = np.argmax(arr[:center_idx][::-1] < threshold)
         right_idx = np.argmax(arr[center_idx:] < threshold)
-        
+
         left_bound = center_idx - max(left_idx, right_idx)
         right_bound = center_idx + max(left_idx, right_idx) + 1  # Ensure odd length
 

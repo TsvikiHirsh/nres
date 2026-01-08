@@ -1,7 +1,12 @@
-from nres import utils
-import pandas as pd
-import numpy as np
+from __future__ import annotations
+
 import warnings
+
+import numpy as np
+import pandas as pd
+
+from nres import utils
+
 warnings.filterwarnings("ignore")
 
 class Data:
@@ -32,7 +37,7 @@ class Data:
     group_shape : tuple or None
         Tuple (nx, ny) for 2D, (n,) for 1D, None for named groups.
     """
-    
+
     def __init__(self, **kwargs):
         """
         Initializes the Data object with optional keyword arguments.
@@ -54,7 +59,7 @@ class Data:
         self.groups = None  # Dict mapping index -> table
         self.indices = None  # List of string indices
         self.group_shape = None  # Tuple (nx, ny) for 2D, (n,) for 1D, None for named
-    
+
     @classmethod
     def _read_counts(cls, filename="run2_graphite_00000/graphite.csv"):
         """
@@ -73,16 +78,16 @@ class Data:
             as the square root of counts if not provided in the file.
         """
         df = pd.read_csv(filename, names=["tof", "counts", "err"], header=None, skiprows=1)
-        
+
         # If no error values provided, calculate as sqrt of counts
         if all(df["err"].isnull()):
             df["err"] = np.sqrt(df["counts"])
-        
+
         # Store label from filename (without path and extension)
         df.attrs["label"] = filename.split("/")[-1].rstrip(".csv")
-        
+
         return df
-    
+
     @classmethod
     def from_counts(cls, signal: str, openbeam: str,
                     empty_signal: str = "", empty_openbeam: str = "",
@@ -155,17 +160,17 @@ class Data:
                     (empty_signal["err"] / empty_signal["counts"])**2 +
                     (empty_openbeam["err"] / empty_openbeam["counts"])**2
                 )
-        
+
         # Construct a dataframe for energy, transmission, and error
         df = pd.DataFrame({
             "energy": signal["energy"],
             "trans": transmission,
             "err": err
         })
-        
+
         # Set the label attribute from the signal file
         df.attrs["label"] = signal.attrs["label"]
-        
+
         # Create and return the Data object
         self_data = cls()
         self_data.table = df
@@ -210,12 +215,11 @@ class Data:
         if isinstance(index, tuple):
             # (10, 20) -> "(10,20)" (no spaces)
             return str(index).replace(" ", "")
-        elif isinstance(index, str):
+        if isinstance(index, str):
             # Remove spaces from string if it looks like a tuple: "(10, 20)" -> "(10,20)"
             return index.replace(" ", "")
-        else:
-            # 5 -> "5"
-            return str(index)
+        # 5 -> "5"
+        return str(index)
 
     def _parse_string_index(self, string_idx):
         """
@@ -246,8 +250,8 @@ class Data:
     @classmethod
     def _extract_indices_from_filenames(cls, filenames, pattern):
         """Extract indices from filenames based on pattern."""
-        import re
         import os
+        import re
 
         indices = []
 
@@ -345,13 +349,12 @@ class Data:
             return (max(ys) + 1, max(xs) + 1), True, False
 
         # Check if 1D (ints)
-        elif isinstance(first_idx, (int, int.__class__)):
+        if isinstance(first_idx, (int, int.__class__)):
             # 1D array
             return (len(indices),), False, True
 
         # Named indices (strings)
-        else:
-            return None, False, False
+        return None, False, False
 
     @classmethod
     def from_transmission(cls, filename: str):
@@ -370,11 +373,11 @@ class Data:
         """
         df = pd.read_csv(filename, names=["energy", "trans", "err"], header=None,
                          skiprows=0, sep=r"\s+")
-        
+
         # Create Data object and assign the dataframe
         self_data = cls()
         self_data.table = df
-        
+
         return self_data
 
     @classmethod
@@ -959,7 +962,7 @@ class Data:
             plt.colorbar(im, ax=ax, label=cbar_label)
             return ax
 
-        elif self.group_shape and len(self.group_shape) == 1:
+        if self.group_shape and len(self.group_shape) == 1:
             # 1D line plot - parse string indices back to integers
             indices_array = np.array([self._parse_string_index(idx) for idx in self.indices])
             trans_values = np.array([avg_trans[idx] for idx in self.indices])
@@ -986,33 +989,32 @@ class Data:
             ax.grid(True, alpha=0.3)
             return ax
 
+        # Bar chart for named indices
+        fig, ax = plt.subplots(figsize=figsize)
+        positions = np.arange(len(self.indices))
+        trans_values = [avg_trans[idx] for idx in self.indices]
+
+        ax.bar(positions, trans_values, **kwargs)
+        ax.set_xticks(positions)
+        ax.set_xticklabels(self.indices, rotation=45, ha='right')
+
+        # Set appropriate ylabel and title based on mode
+        if logT:
+            ax.set_ylabel("Thickness [cm]")
+            if title is None:
+                title = f"Thickness Estimate ({emin:.2g}-{emax:.2g} eV)"
+        elif emin2 is not None:
+            ax.set_ylabel("Transmission Ratio")
+            if title is None:
+                title = f"Transmission Ratio ({emin:.2g}-{emax:.2g})/({emin2:.2g}-{emax2:.2g} eV)"
         else:
-            # Bar chart for named indices
-            fig, ax = plt.subplots(figsize=figsize)
-            positions = np.arange(len(self.indices))
-            trans_values = [avg_trans[idx] for idx in self.indices]
+            ax.set_ylabel("Average Transmission")
+            if title is None:
+                title = f"Average Transmission ({emin:.2g}-{emax:.2g} eV)"
 
-            ax.bar(positions, trans_values, **kwargs)
-            ax.set_xticks(positions)
-            ax.set_xticklabels(self.indices, rotation=45, ha='right')
-
-            # Set appropriate ylabel and title based on mode
-            if logT:
-                ax.set_ylabel("Thickness [cm]")
-                if title is None:
-                    title = f"Thickness Estimate ({emin:.2g}-{emax:.2g} eV)"
-            elif emin2 is not None:
-                ax.set_ylabel("Transmission Ratio")
-                if title is None:
-                    title = f"Transmission Ratio ({emin:.2g}-{emax:.2g})/({emin2:.2g}-{emax2:.2g} eV)"
-            else:
-                ax.set_ylabel("Average Transmission")
-                if title is None:
-                    title = f"Average Transmission ({emin:.2g}-{emax:.2g} eV)"
-
-            ax.set_title(title)
-            plt.tight_layout()
-            return ax
+        ax.set_title(title)
+        plt.tight_layout()
+        return ax
 
     def rebin(self, n=None, tstep=None):
         """
