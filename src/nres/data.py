@@ -1071,6 +1071,10 @@ class Data:
         - Transmission and its error are recalculated from rebinned counts
         - Energy grid is recomputed from the new time-of-flight grid
         - For grouped data, rebinning is applied to all groups
+        - **NaN handling**: Rows with NaN values in energy, transmission, or error
+          columns are automatically removed before rebinning. This is safe because
+          NaN values don't contribute to fits. If all data is NaN, an empty table
+          is returned for that group.
         """
         # Validate input
         if n is None and tstep is None:
@@ -1267,11 +1271,27 @@ class Data:
                     if n_bins == 1:
                         return table_df.copy()
 
-                    n_original = len(table_df)
+                    # Remove NaN values before binning
+                    # NaN values don't contribute to fits, so it's safe to exclude them
+                    clean_table = table_df.dropna(subset=['energy', 'trans', 'err'])
+
+                    if len(clean_table) == 0:
+                        # If all data is NaN, return empty table with same structure
+                        return pd.DataFrame({
+                            'energy': [],
+                            'trans': [],
+                            'err': []
+                        })
+
+                    n_original = len(clean_table)
                     n_new = n_original // n_bins
 
+                    if n_new == 0:
+                        # Not enough data points to bin, return as is
+                        return clean_table.copy()
+
                     # Truncate to make evenly divisible
-                    table_truncated = table_df.iloc[:n_new * n_bins].copy()
+                    table_truncated = clean_table.iloc[:n_new * n_bins].copy()
 
                     # Reshape and average (for transmission, we average not sum)
                     energy_reshaped = table_truncated['energy'].values.reshape(n_new, n_bins)
@@ -1279,11 +1299,13 @@ class Data:
                     err_reshaped = table_truncated['err'].values.reshape(n_new, n_bins)
 
                     # Use arithmetic mean for energy (centers of rebinned energy bins)
-                    new_energy = energy_reshaped.mean(axis=1)
+                    # nanmean to handle any remaining NaNs in the reshaped arrays
+                    new_energy = np.nanmean(energy_reshaped, axis=1)
                     # Use arithmetic mean for transmission
-                    new_trans = trans_reshaped.mean(axis=1)
+                    new_trans = np.nanmean(trans_reshaped, axis=1)
                     # Combine errors: err_mean = sqrt(sum(err^2)) / n
-                    new_err = np.sqrt((err_reshaped**2).sum(axis=1)) / n_bins
+                    # Use nansum to skip NaN values in error combination
+                    new_err = np.sqrt(np.nansum(err_reshaped**2, axis=1)) / n_bins
 
                     rebinned_table = pd.DataFrame({
                         'energy': new_energy,
@@ -1291,12 +1313,27 @@ class Data:
                         'err': new_err
                     })
 
+                    # Remove any remaining NaN rows created by nanmean of all-NaN bins
+                    rebinned_table = rebinned_table.dropna(subset=['energy', 'trans', 'err'])
+
                 else:
                     # Interpolation method: new tstep
                     from scipy.interpolate import interp1d
 
-                    # Current energy grid
-                    old_energy = table_df['energy'].values
+                    # Remove NaN values before rebinning
+                    # NaN values don't contribute to fits, so it's safe to exclude them
+                    clean_table = table_df.dropna(subset=['energy', 'trans', 'err'])
+
+                    if len(clean_table) == 0:
+                        # If all data is NaN, return empty table with same structure
+                        return pd.DataFrame({
+                            'energy': [],
+                            'trans': [],
+                            'err': []
+                        })
+
+                    # Current energy grid (without NaNs)
+                    old_energy = clean_table['energy'].values
 
                     # Create new energy grid based on new tstep
                     # Convert energy back to TOF, apply new tstep, convert back
@@ -1304,23 +1341,33 @@ class Data:
                     tof_min = old_tof_time.min()
                     tof_max = old_tof_time.max()
                     n_new_bins = int((tof_max - tof_min) / new_tstep_val)
+
+                    if n_new_bins <= 0:
+                        # Handle edge case where time range is too small
+                        n_new_bins = 1
+
                     new_tof_time = np.linspace(tof_min, tof_max, n_new_bins)
                     new_energy = utils.time2energy(new_tof_time, L_val)
 
                     # Interpolate transmission and error
-                    trans_interp = interp1d(old_energy, table_df['trans'].values,
-                                           kind='linear', fill_value='extrapolate', bounds_error=False)
-                    err_interp = interp1d(old_energy, table_df['err'].values,
-                                         kind='linear', fill_value='extrapolate', bounds_error=False)
+                    # Use bounds_error=False with fill_value=nan to avoid extrapolating into NaN regions
+                    trans_interp = interp1d(old_energy, clean_table['trans'].values,
+                                           kind='linear', fill_value=np.nan, bounds_error=False)
+                    err_interp = interp1d(old_energy, clean_table['err'].values,
+                                         kind='linear', fill_value=np.nan, bounds_error=False)
 
                     new_trans = trans_interp(new_energy)
                     new_err = err_interp(new_energy)
 
+                    # Create rebinned table
                     rebinned_table = pd.DataFrame({
                         'energy': new_energy,
                         'trans': new_trans,
                         'err': new_err
                     })
+
+                    # Remove any NaN rows that may have been created during interpolation
+                    rebinned_table = rebinned_table.dropna(subset=['energy', 'trans', 'err'])
 
                 # Preserve label if present
                 if hasattr(table_df, 'attrs') and 'label' in table_df.attrs:
@@ -1341,17 +1388,30 @@ class Data:
             new_data.table = new_data.groups[self.indices[0]]
 
             # Also update grouped_trans and grouped_err arrays
-            n_groups = len(self.indices)
-            n_energy = len(new_data.groups[self.indices[0]])
-            new_trans_array = np.zeros((n_groups, n_energy))
-            new_err_array = np.zeros((n_groups, n_energy))
+            # Handle case where groups may have different lengths due to NaN removal
+            if len(new_data.groups[self.indices[0]]) > 0:
+                n_groups = len(self.indices)
+                n_energy = len(new_data.groups[self.indices[0]])
+                new_trans_array = np.zeros((n_groups, n_energy))
+                new_err_array = np.zeros((n_groups, n_energy))
 
-            for i, idx in enumerate(self.indices):
-                new_trans_array[i, :] = new_data.groups[idx]['trans'].values
-                new_err_array[i, :] = new_data.groups[idx]['err'].values
+                for i, idx in enumerate(self.indices):
+                    group_len = len(new_data.groups[idx])
+                    if group_len > 0:
+                        # Handle case where this group might have different length
+                        new_trans_array[i, :min(group_len, n_energy)] = new_data.groups[idx]['trans'].values[:n_energy]
+                        new_err_array[i, :min(group_len, n_energy)] = new_data.groups[idx]['err'].values[:n_energy]
+                    else:
+                        # Empty group - fill with NaN
+                        new_trans_array[i, :] = np.nan
+                        new_err_array[i, :] = np.nan
 
-            new_data.grouped_trans = new_trans_array
-            new_data.grouped_err = new_err_array
+                new_data.grouped_trans = new_trans_array
+                new_data.grouped_err = new_err_array
+            else:
+                # All groups are empty - create empty arrays
+                new_data.grouped_trans = np.array([]).reshape(len(self.indices), 0)
+                new_data.grouped_err = np.array([]).reshape(len(self.indices), 0)
 
         else:
             # Rebin non-grouped data
