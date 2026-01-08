@@ -59,6 +59,17 @@ addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
 xfail_strict = true
 filterwarnings = [
   "error",
+  # Ignore deprecation warnings from dependencies
+  "ignore::DeprecationWarning",
+  "ignore::PendingDeprecationWarning",
+  # Ignore runtime warnings from scipy/numpy
+  "ignore::RuntimeWarning:scipy",
+  "ignore::RuntimeWarning:numpy",
+  # Ignore import warnings from matplotlib
+  "ignore::ImportWarning:matplotlib",
+  # Ignore all warnings from kiwisolver and PIL (C extensions)
+  "ignore::Warning:kiwisolver",
+  "ignore::Warning:PIL",
 ]
 log_cli_level = "INFO"
 testpaths = [
