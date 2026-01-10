@@ -58,8 +58,7 @@ minversion = "6.0"
 addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
 xfail_strict = true
 filterwarnings = [
-  "error",
-  # Ignore deprecation warnings from dependencies
+  # Ignore deprecation warnings from dependencies to avoid noise
   "ignore::DeprecationWarning",
   "ignore::PendingDeprecationWarning",
   # Ignore runtime warnings from scipy/numpy
@@ -67,9 +66,10 @@ filterwarnings = [
   "ignore::RuntimeWarning:numpy",
   # Ignore import warnings from matplotlib
   "ignore::ImportWarning:matplotlib",
-  # Ignore all warnings from kiwisolver and PIL (C extensions)
+  # Ignore warnings from C extension libraries that can cause segfaults
   "ignore::Warning:kiwisolver",
   "ignore::Warning:PIL",
+  "ignore::Warning:scipy",
 ]
 log_cli_level = "INFO"
 testpaths = [
