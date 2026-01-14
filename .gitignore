@@ -161,3 +161,4 @@ evaluated_data/*.endf
 # Test output files
 *test_visualization.png
 test_pick_one.py
+.claude
