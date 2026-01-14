@@ -29,7 +29,7 @@ class TransmissionModel(lmfit.Model):
         cross_section : callable
             A function that takes energy (E) as input and returns the cross section.
         response : str, optional
-            The type of response function to use, by default "expo_gauss".
+            The type of response function to use. Options are "expo_gauss", "gaussian", or "none". Default is "expo_gauss".
         tof_calibration : str, optional
             The type of TOF calibration to use, by default "linear". other options are "full" to include the energy dependent corrections.
         background : str, optional

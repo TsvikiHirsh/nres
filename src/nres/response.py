@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from scipy.stats import exponnorm
+from scipy.stats import exponnorm, norm
 import matplotlib.pyplot as plt
 import lmfit
 import inspect
@@ -12,7 +12,7 @@ class Response:
         Initializes the Response object with specified parameters.
 
         Parameters:
-        kind (str): The type of response function to use. Options are 'expo_gauss' or 'none'.
+        kind (str): The type of response function to use. Options are 'expo_gauss', 'gaussian', or 'none'.
         vary (bool): If True, the parameters can vary during fitting. Default is False.
         eps (float): The threshold for cutting the response array symmetrically. Default is 1.0e-6.
         tstep (float): The time step for the response function. Default is 1.56255e-9 seconds.
@@ -31,10 +31,15 @@ class Response:
             self.params.add('K', value=1.0, min=0.0001, vary=vary)  # Exponential shape parameter
             self.params.add('x0', value=1e-9, vary=vary)            # Location parameter (Gaussian)
             self.params.add('τ', value=1e-9, min=1e-10, vary=vary)  # Exponential scale parameter
+        elif kind == "gaussian":
+            self.function = self.gaussian_response
+            self.params = lmfit.Parameters()
+            self.params.add('x0', value=0.0, vary=vary)             # Location parameter (mean)
+            self.params.add('σ', value=1e-9, min=1e-12, vary=vary)  # Scale parameter (standard deviation)
         elif kind == "none":
             self.function = self.empty_response
         else:
-            raise NotImplementedError(f"Response kind '{kind}' is not supported. Use 'expo_gauss' or 'none'.")
+            raise NotImplementedError(f"Response kind '{kind}' is not supported. Use 'expo_gauss', 'gaussian', or 'none'.")
 
     def register_response(self, response_func, lmfit_params=None, **kwargs):
         """
@@ -105,6 +110,21 @@ class Response:
         np.ndarray: Normalized response array.
         """
         response = exponnorm.pdf(self.tgrid, K, loc=x0, scale=τ)
+        response /= np.sum(response)
+        return self.cut_array_symmetric(response, self.eps)
+
+    def gaussian_response(self, x0=0., σ=1.0e-9, **kwargs):
+        """
+        Computes the Gaussian response function.
+
+        Parameters:
+        x0 (float): Location parameter (mean) for the Gaussian.
+        σ (float): Scale parameter (standard deviation) for the Gaussian.
+
+        Returns:
+        np.ndarray: Normalized response array.
+        """
+        response = norm.pdf(self.tgrid, loc=x0, scale=σ)
         response /= np.sum(response)
         return self.cut_array_symmetric(response, self.eps)
 
